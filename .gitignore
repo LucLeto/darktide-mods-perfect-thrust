@@ -1,0 +1,9 @@
+# IDE
+.idea/
+.vscode/
+
+# Packaged mod archives
+*.zip
+
+# Local copies of third-party mod sources used for compatibility analysis
+.codex_tmp/

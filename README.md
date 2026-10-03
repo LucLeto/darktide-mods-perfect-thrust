@@ -1,5 +1,5 @@
 # darktide-mods-perfect-thrust
-Perfect Thrust adds a small ring around the crosshair that shows when a charged heavy attack has received the full benefit of your charge-dependent effects - the **Thrust** blessing, the built-in windup bonus some weapons have, and the Ogryn talent that builds damage and stagger while charging. These effects reach their maximum well before the weapon releases the attack on its own, and the game gives no feedback for that moment. The ring fills while the effects build and turns green once **all** of them are capped, so you can release immediately instead of holding until the forced release.
+Perfect Thrust adds a small ring around the crosshair that shows when a charged heavy attack has received the full benefit of your charge-dependent effects - the **Thrust** and **Slow and Steady** blessings, the Ogryn talent **Crunch!**, and the built-in windup bonus some weapons have. These effects reach their maximum well before the weapon releases the attack on its own, and the game gives no feedback for that moment. The ring fills while the effects build and turns green once **all** of them are capped, so you can release immediately instead of holding until the forced release.
 
 The mod is purely visual. It never releases attacks, changes timings, simulates input or alters buffs.
 
@@ -20,25 +20,46 @@ With `Display` set to `READY only` the ring stays hidden while charging and only
 
 ## What it tracks
 
-Nothing is hard-coded per weapon. When a windup starts, the mod looks through your active buffs once and picks every effect whose buff template gains stacks from the game's windup trigger (`on_windup_trigger`) and has a child buff with a stack limit. Effects tied to the weapon slot you are *not* holding are ignored. This covers today's effects and any future blessing or talent built the same way:
+Nothing is hard-coded per weapon. When you start charging, the mod looks through your active buffs once and picks every effect that gains stacks while a heavy attack is charged. Effects tied to the weapon you are *not* holding are ignored. This covers all of today's effects and any future blessing or talent that works the same way:
 
-| Source | Buff template | Max stacks | Counts when |
-| --- | --- | --- | --- |
-| Thrust blessing | `weapon_trait_bespoke_<weapon>_windup_increases_power_parent` | 3 | Always while charging |
-| Weapon windup bonus | `windup_increases_power_default_parent` | 3 | Always while charging |
-| Weapon windup bonus (three steps) | `windup_increases_power_default_three_steps_parent` | 3 | Always while charging |
-| Weapon windup bonus (four steps) | `windup_increases_power_default_four_steps_parent` | 4 | Always while charging |
-| Weapon windup bonus (special) | `windup_increases_special_power_default_parent` | 4 | Only while the weapon special is active |
-| Weapon windup bonus (sprint) | `windup_increases_damage_on_sprint_parent` | 3 | Only on sprinting heavy attacks |
-| Ogryn talent (`ogryn_fully_charged_attacks_gain_damage_and_stagger`) | `ogryn_windup_increases_power_parent` | 4 | Always while charging |
+| Effect | Type | Weapons | Max stacks | Per stack | Counts when |
+| --- | --- | --- | --- | --- | --- |
+| Thrust | Blessing | Bully Clubs, Chainaxes, Cleavers, Combat Axes, Crushers, Duelling Swords, Heavy Swords, Latrine Shovels, Pickaxes, Power Swords, Sapper Shovels, Shock Mauls, Thunder Hammers | 3 | +5 / 10 / 15 / 20 % Strength by blessing tier (Thunder Hammers: +5 / 7.5 / 10 / 12.5 %) | Always |
+| Slow and Steady | Blessing | Cruncher, Pickaxes | 3 | 5 / 6 / 7 / 8 % of max Toughness by blessing tier, replenished when the attack hits | Always |
+| Crunch! | Ogryn talent | Any Ogryn melee weapon | 4 | +7.5 % damage and +7.5 % stagger (impact) | Always |
+| Windup bonus | Built into the weapon | Crowbar | 3 | +7.5 % Strength | Always |
+| Windup bonus | Built into the weapon | Thunder Hammers | 3 | +12.5 % Strength | Always |
+| Windup bonus | Built into the weapon | Cruncher | 4 | +10 % Strength | Always |
+| Windup bonus | Built into the weapon | Mechanicus Power Sword | 4 | +12.5 % Strength | Only while the weapon special is active |
+| Windup bonus | Built into the weapon | Relic Blades | 3 | +8 % heavy melee damage | Only on heavy attacks charged while sprinting |
 
-The built-in windup bonuses are part of the weapon templates `crowbar_p1_m1`, `thunderhammer_2h_p1_m1/m2`, `ogryn_hammer_2h_p1_m1`, `powersword_p3_m1` and `powersword_2h_p1_m1/m2`. Both melee windups and shield block-windups (`ActionWindup`, `ActionBlockWindup`) are supported.
+Blessing, talent and weapon names follow kuli's guides (see [Credits & Sources](#credits--sources)); the built-in windup bonuses are taken from the game's weapon templates. Shield heavy attacks that charge from a block are supported as well.
+
+<details>
+<summary>Buff templates (for modders)</summary>
+
+The mod picks every buff whose template procs on `on_windup_trigger` and adds stacks of a child buff with a `max_stacks` limit - either through `child_buff_template` with `add_child_proc_events`, or through the `*_parent` / `*_child` naming convention for proc buffs that add their child themselves.
+
+| Effect | Buff template | Max stacks |
+| --- | --- | --- |
+| Thrust | `weapon_trait_bespoke_<weapon>_windup_increases_power_parent` | 3 |
+| Slow and Steady | `weapon_trait_bespoke_<weapon>_toughness_on_hit_based_on_charge_time` | 3 |
+| Crunch! | `ogryn_windup_increases_power_parent` | 4 |
+| Windup bonus (Crowbar) | `windup_increases_power_default_parent` | 3 |
+| Windup bonus (Thunder Hammers) | `windup_increases_power_default_three_steps_parent` | 3 |
+| Windup bonus (Cruncher) | `windup_increases_power_default_four_steps_parent` | 4 |
+| Windup bonus (Mechanicus Power Sword) | `windup_increases_special_power_default_parent` | 4 |
+| Windup bonus (Relic Blades) | `windup_increases_damage_on_sprint_parent` | 3 |
+
+Weapon templates with a built-in windup bonus: `crowbar_p1_m1`, `thunderhammer_2h_p1_m1/m2`, `ogryn_hammer_2h_p1_m1`, `powersword_p3_m1`, `powersword_2h_p1_m1/m2`. Charging is read from `ActionWindup` and `ActionBlockWindup`.
+
+</details>
 
 An effect only counts once it has actually started stacking during the current charge. Conditional effects whose condition is not met (a sprint-only bonus on a standing heavy, a special-only bonus with the special off) therefore never hold back READY. Stacks left over from the previous attack are ignored until the game has cleared them.
 
 ### How the stacks build
 
-The first stack is granted when the heavy attack becomes available, then one more each proc interval - 0.25 s by default, shorter on many weapons. A 3-stack effect is therefore capped two intervals after the heavy threshold, and a 4-stack effect three intervals after it. With several effects, READY waits for the slowest one.
+The first stack is granted when the heavy attack becomes available, then one more each interval. According to kuli's guides the interval is 0.25 s on most weapons and 0.2 s on Pickaxes, Thunder Hammers and the Chainaxe Mk IV; attack speed buffs do not change it. A 3-stack effect is therefore capped two intervals after the heavy threshold, and a 4-stack effect such as Crunch! three intervals after it. With several effects, READY waits for the slowest one - with Thrust and Crunch! on an Ogryn, READY follows Crunch!.
 
 ## READY timing
 
@@ -86,7 +107,15 @@ A windup without any relevant effect logs a single `no charge-dependent effect` 
 * **Very high ping.** Effects are counted once their first stack has arrived. Above roughly 250-500 ms, a second effect's first stack may not have arrived yet when another effect is capped, which can make a predicted READY early.
 * **The ring appears about one ping after the heavy threshold**, in both modes, because an effect is only shown once its first stack has arrived from the server. Its fill is already correct when it appears.
 * **The ring stays at the screen centre plus your offset.** It does not follow the crosshair's small recoil and sway drift, which melee weapons barely have.
+* **"Fully charged" effects are not tracked.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks. READY does not mean the attack counts as fully charged for them.
 * **Only effects that stack from the windup trigger are detected.** An effect that builds while charging in some other way, or has no child buff with a stack limit, is not recognised. At most four effects are tracked per charge.
 * **Ranged charging is not covered.** Plasma guns, force staves and other charged ranged weapons use a separate charge mechanic that the game's own crosshair already displays.
 * **No Custom HUD integration.** Position the ring with the offset settings.
 * The mod reads a few internal fields of the game's weapon actions and buffs. A game update that renames them disables the ring until the mod is updated; it does not affect gameplay.
+
+## Credits & Sources
+
+Blessing, talent and weapon names and values are taken from the excellent guides by [kuli](https://steamcommunity.com/id/kulii):
+
+* [\[1.13.x\] Melee Weapon Blessings & Mechanics](https://steamcommunity.com/sharedfiles/filedetails/?id=3286161222)
+* [\[1.13.x\] Ogryn Talents & Mechanics](https://steamcommunity.com/sharedfiles/filedetails/?id=3094034467)

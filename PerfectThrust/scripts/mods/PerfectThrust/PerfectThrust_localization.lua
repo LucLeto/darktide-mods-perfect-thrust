@@ -14,7 +14,7 @@ return {
         ["zh-tw"] = "Perfect Thrust",
     },
     mod_description = {
-        en = "Shows a ring around the crosshair while you charge a heavy attack and signals READY once every charge-dependent effect - such as the Thrust blessing, weapon windup bonuses or the Ogryn Thrust talent - has reached its maximum stacks. Visual only: attack timing and inputs are never changed.",
+        en = "Shows a ring around the crosshair while you charge a heavy attack and signals READY once every charge-dependent effect - such as the Thrust and Slow and Steady blessings, weapon windup bonuses or the Ogryn talent Crunch! - has reached its maximum stacks. Visual only: attack timing and inputs are never changed.",
         fr = "Affiche un anneau autour du réticule pendant que vous chargez une attaque lourde et signale PRÊT dès que tous les effets liés à la charge (bénédictions, talents, bonus de préparation de l'arme) ont atteint leur nombre maximal de cumuls. Purement visuel : le timing des attaques et les commandes ne sont jamais modifiés.",
         de = "Zeigt beim Aufladen eines schweren Angriffs einen Ring um das Fadenkreuz und meldet BEREIT, sobald alle aufladungsabhängigen Effekte (Segnungen, Talente, Ausholboni der Waffe) ihre maximalen Stapel erreicht haben. Rein visuell: Angriffstiming und Eingaben werden nie verändert.",
         it = "Mostra un anello attorno al mirino mentre carichi un attacco pesante e segnala PRONTO quando tutti gli effetti legati alla carica (benedizioni, talenti, bonus di caricamento dell'arma) hanno raggiunto il numero massimo di cumuli. Solo visivo: tempi d'attacco e comandi non vengono mai modificati.",

@@ -1,3 +1,13 @@
+--- Perfect Thrust's DMF localization table for all twelve supported languages.
+-- Returns a table from localization id to a table of texts by language code; DMF resolves
+-- `mod:localize(id)` against it. Holds the mod name and description, the settings group, every
+-- setting title and tooltip and the dropdown options. Texts are passed through `string.format`
+-- by DMF, so a literal percent sign is written as `%%`. Debug chat lines are developer output and
+-- stay in English.
+--
+-- Loaded by DMF as `mod_localization`, as declared in `PerfectThrust.mod`.
+-- module: PerfectThrust_localization
+-- author: LucLeto
 return {
     mod_name = {
         en = "Perfect Thrust",

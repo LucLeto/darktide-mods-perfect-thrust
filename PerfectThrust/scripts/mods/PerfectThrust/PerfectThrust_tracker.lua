@@ -1,3 +1,22 @@
+--- Charge state and effect detection for Perfect Thrust; decides what the ring shows.
+-- Tracks the local player's melee windups (`ActionWindup` and `ActionBlockWindup`). When one
+-- starts, the active buffs are scanned once for effects that gain stacks from the game's
+-- `on_windup_trigger` proc event (blessings such as Thrust and Slow and Steady, the Ogryn talent
+-- Crunch!, the built-in windup bonus of some weapons), and their stack caps are resolved from
+-- the buff templates rather than from a per-weapon list.
+--
+-- Every stack is granted by the server and reaches a multiplayer client one round trip later.
+-- The windup action itself runs on the client too and advances the same trigger timer the
+-- server uses, so this module reads that timer (`_proc_trigger_time`) to predict the stack count
+-- without the network delay, while the replicated stacks decide which effects count at all. The
+-- `confirmed` timing mode uses only the replicated stacks.
+--
+-- Loaded by `PerfectThrust.lua` through `mod:io_dofile` and stored as `mod._tracker`. The windup
+-- hooks there feed `on_windup_start`, `on_windup_update` and `on_windup_finish`, and the HUD
+-- element calls `refresh` once per frame while a windup is tracked. All state lives in module
+-- locals with preallocated tables, so nothing is allocated per frame.
+-- module: PerfectThrust_tracker
+-- author: LucLeto
 local mod = get_mod("PerfectThrust")
 local BuffSettings = require("scripts/settings/buff/buff_settings")
 local BuffTemplates = require("scripts/settings/buff/buff_templates")
@@ -17,19 +36,55 @@ local table_clear = table.clear
     end
 local type = type
 
+-- ----------------------------------------------------------------------------
+-- Constants
+-- ----------------------------------------------------------------------------
+
+--- Proc event fired by the windup action once the heavy attack is available and then once per interval.
 local ON_WINDUP_TRIGGER = BuffSettings.proc_events.on_windup_trigger
--- Same fallback ActionWindup / ActionBlockWindup use when an action sets no proc_time_interval.
+
+--- Trigger interval in seconds of an action that sets no `proc_time_interval`.
+-- Same fallback `ActionWindup` and `ActionBlockWindup` use.
 local PROC_INTERVAL_DEFAULT = 0.25
+
+--- Most charge-dependent effects tracked during one windup; further matches are ignored.
 local MAX_EFFECTS = 4
+
+--- Highest fill a predicted effect reaches before the game has fired its last needed trigger.
+-- Keeps a time-based fill from showing a full ring ahead of the trigger counter.
 local NEARLY_FULL = 0.999
+
+--- `timing_mode` setting value that takes READY from the replicated stacks only.
 local TIMING_MODE_CONFIRMED = "confirmed"
+
+--- Prefix of every debug chat line.
 local DEBUG_PREFIX = "[Perfect Thrust] "
 
+--- The tracker module table returned to `PerfectThrust.lua`.
 local Tracker = {}
 
--- Template name -> descriptor, or false when the template does not build stacks while charging.
+-- ----------------------------------------------------------------------------
+-- State
+-- ----------------------------------------------------------------------------
+
+--- Effect descriptors by buff template name, or false for a template that does not stack while charging.
+-- Templates never change at runtime, so each one is resolved at most once.
 local descriptor_cache = {}
+
+--- Preallocated pool of the effects tracked during the current windup.
+-- Only the first `state.effect_count` entries are in use. Fields:
+-- `child_name` buff template whose stacks are counted;
+-- `offset` baseline stacks a parent buff keeps on its child, subtracted from the stack count;
+-- `cap` stacks at which the effect is at its maximum;
+-- `needed` windup triggers needed to reach `cap`;
+-- `predictable` whether every trigger is known to grant a stack (no proc chance, no cooldown);
+-- `observed` replicated stack count after the offset;
+-- `start_observed` `observed` when the windup started;
+-- `armed` whether the stack count has been seen at zero during this windup;
+-- `confirmed` whether the effect has started stacking during this windup.
 local effects = {}
+
+--- Scratch list of the per-effect parts of a debug line.
 local debug_parts = {}
 
 for i = 1, MAX_EFFECTS do
@@ -46,6 +101,13 @@ for i = 1, MAX_EFFECTS do
     }
 end
 
+--- The windup being tracked.
+-- `active` is set only while a local windup with at least one charge-dependent effect runs.
+-- `action`, `action_name` and `start_t` identify that windup and are checked against the
+-- weapon_action component every frame. `first_trigger_t` is the time in action of the first
+-- trigger, `interval` the time between triggers, `triggers` how many the game has fired so far
+-- and `time_in_action` the latest fixed-step time in action. `fill` and `ready` are the last
+-- values returned by `Tracker.refresh`; `ready` stays set for the rest of the windup.
 local state = {
     active = false,
     action = nil,
@@ -63,6 +125,18 @@ local state = {
     ready = false
 }
 
+-- ----------------------------------------------------------------------------
+-- Effect discovery
+-- ----------------------------------------------------------------------------
+
+--- Works out whether a buff template stacks while a heavy attack is charged, and how.
+-- A template qualifies when it procs on `on_windup_trigger` and adds stacks of a child buff that
+-- has a `max_stacks` limit. Parent proc buffs (blessings, weapon windup bonuses) name the child in
+-- `child_buff_template` and the stacks per trigger in `add_child_proc_events`. Proc buffs that add
+-- their child from a proc function (the Ogryn talent Crunch!) are matched by the `*_parent` /
+-- `*_child` naming convention, at one stack per trigger.
+-- tab: template buff template
+-- treturn: tab|bool descriptor with `child_name`, `offset`, `cap`, `per_trigger`, `uses_parent_override` and `predictable`, or false
 local function _resolve_descriptor(template)
     local proc_events = template.proc_events
     local proc_chance = proc_events and proc_events[ON_WINDUP_TRIGGER]
@@ -76,14 +150,11 @@ local function _resolve_descriptor(template)
     local uses_parent_override = false
 
     if child_name then
-        -- Parent proc buffs (blessings, weapon windup keywords) add child stacks per windup trigger.
         local add_child_proc_events = template.add_child_proc_events
 
         per_trigger = add_child_proc_events and add_child_proc_events[ON_WINDUP_TRIGGER]
         uses_parent_override = true
     else
-        -- Proc buffs that add their child from a proc function (e.g. the Ogryn Thrust talent)
-        -- follow the *_parent / *_child naming convention.
         local name = template.name
         local candidate = name and (string_gsub(name, "_parent$", "_child"))
 
@@ -110,6 +181,9 @@ local function _resolve_descriptor(template)
     }
 end
 
+--- Returns the cached descriptor of a buff template, resolving it on first use.
+-- tab: template buff template
+-- treturn: tab|bool descriptor, or false when the template is not a charge-dependent effect
 local function _descriptor(template)
     local name = template.name
 
@@ -127,6 +201,10 @@ local function _descriptor(template)
     return descriptor
 end
 
+--- Returns whether one of the first `count` tracked effects already counts the given child buff.
+-- int: count effects filled in so far
+-- string: child_name child buff template name
+-- treturn: bool
 local function _has_effect(count, child_name)
     for i = 1, count do
         if effects[i].child_name == child_name then
@@ -137,12 +215,17 @@ local function _has_effect(count, child_name)
     return false
 end
 
+--- Returns an effect's replicated stack count without the parent's baseline stacks.
+-- tab: buff_extension local player's buff extension
+-- tab: effect entry of `effects`
+-- treturn: int stacks, never below zero
 local function _observed_stacks(buff_extension, effect)
     local observed = buff_extension:current_stacks(effect.child_name) - effect.offset
 
     return observed > 0 and observed or 0
 end
 
+--- Stops tracking and clears the windup state.
 local function _reset_state()
     state.active = false
     state.action = nil
@@ -157,6 +240,12 @@ local function _reset_state()
     state.ready = false
 end
 
+-- ----------------------------------------------------------------------------
+-- Debug output
+-- ----------------------------------------------------------------------------
+
+--- Formats the tracked effects as `child observed/cap` pairs for a debug line.
+-- treturn: string
 local function _debug_effects()
     table_clear(debug_parts)
 
@@ -169,6 +258,8 @@ local function _debug_effects()
     return table_concat(debug_parts, ", ")
 end
 
+--- Writes the end of a tracked windup to chat when debug output is enabled.
+-- param: reason why tracking ended, such as the action's finish reason
 local function _debug_finish(reason)
     if not mod._settings.debug_logging then
         return
@@ -177,6 +268,17 @@ local function _debug_finish(reason)
     mod:echo(DEBUG_PREFIX .. "end (%s) after %.2fs, %d triggers, ready=%s: %s", tostring(reason), state.time_in_action, state.triggers, tostring(state.ready), _debug_effects())
 end
 
+-- ----------------------------------------------------------------------------
+-- Windup hooks
+-- ----------------------------------------------------------------------------
+
+--- Starts tracking a windup of the local player when a charge-dependent effect is active.
+-- Called after `ActionWindup.start` or `ActionBlockWindup.start`. Ignores bots and other players,
+-- and windups without a trigger time. Scans the active buffs once, keeps the effects that belong
+-- to the wielded weapon or to no weapon, and stays idle when none is found. An instance override
+-- of `max_stacks` on a parent buff caps its children, as in `WeaponTraitParentProcBuff`.
+-- tab: action windup action instance
+-- number: t fixed-step time the action started at
 Tracker.on_windup_start = function (action, t)
     if not action._is_local_unit or not action._is_human_controlled then
         return
@@ -218,7 +320,6 @@ Tracker.on_windup_start = function (action, t)
                 local cap = descriptor.cap
 
                 if descriptor.uses_parent_override then
-                    -- Mirrors WeaponTraitParentProcBuff: an instance override of max_stacks caps the children.
                     local override_data = buff_instance._template_override_data
                     local override_max_stacks = type(override_data) == "table" and override_data.max_stacks
 
@@ -281,6 +382,13 @@ Tracker.on_windup_start = function (action, t)
     end
 end
 
+--- Records the trigger count and time in action of the tracked windup.
+-- Called after every fixed-step update of a windup action; other actions return immediately.
+-- The action advances `_proc_trigger_time` by one interval each time it fires
+-- `on_windup_trigger`, so this reads the game's own trigger count, and follows a server
+-- correction that resets the timer.
+-- tab: action windup action instance
+-- number: time_in_action fixed-step time since the action started
 Tracker.on_windup_update = function (action, time_in_action)
     if action ~= state.action then
         return
@@ -288,8 +396,6 @@ Tracker.on_windup_update = function (action, time_in_action)
 
     state.time_in_action = time_in_action
 
-    -- The action advances _proc_trigger_time by one interval each time it fires on_windup_trigger,
-    -- so this reads the game's own trigger count (and follows server corrections that reset it).
     local proc_trigger_time = action._proc_trigger_time
 
     if proc_trigger_time then
@@ -299,6 +405,11 @@ Tracker.on_windup_update = function (action, time_in_action)
     end
 end
 
+--- Stops tracking when the tracked windup finishes.
+-- Called after `ActionWindup.finish`. `ActionBlockWindup` inherits its finish from `ActionBlock`
+-- and is not hooked; its end is caught by the weapon_action check in `Tracker.refresh`.
+-- tab: action windup action instance
+-- string: reason finish reason passed by the action handler
 Tracker.on_windup_finish = function (action, reason)
     if action ~= state.action then
         return
@@ -308,8 +419,26 @@ Tracker.on_windup_finish = function (action, reason)
     _reset_state()
 end
 
--- Called by the HUD element every frame while a tracked windup is running.
--- Returns visible, fill fraction (0..1), ready.
+-- ----------------------------------------------------------------------------
+-- Per-frame refresh
+-- ----------------------------------------------------------------------------
+
+--- Updates the tracked effects and returns what the ring should show.
+-- Called by the HUD element every frame while a windup is tracked. Stops tracking first when the
+-- weapon_action component no longer runs the tracked windup or the player unit is gone, which
+-- covers a missed finish, a cancel, a weapon switch, death and rollbacks.
+--
+-- An effect is confirmed once it has started stacking during this windup, and only confirmed
+-- effects count. Each one contributes a fill fraction; the ring shows the lowest, so READY waits
+-- for the slowest effect. In `predicted` mode a predictable effect is full once the game has fired
+-- its needed triggers and fills smoothly with the time in action before that, reaching
+-- `k / needed` exactly at trigger `k`. In `confirmed` mode, and for effects that are not
+-- predictable, the fraction is the replicated stack count over the cap. Once READY, the ring
+-- stays full for the rest of the windup.
+-- string: timing_mode `predicted` or `confirmed`
+-- treturn: bool whether the ring should be visible
+-- treturn: number fill fraction from 0 to 1
+-- treturn: bool whether every confirmed effect is at its maximum
 Tracker.refresh = function (timing_mode)
     if not state.active then
         return false, 0, false
@@ -364,7 +493,6 @@ Tracker.refresh = function (timing_mode)
                 if triggers >= effect.needed then
                     fraction = 1
                 else
-                    -- Smooth fill that reaches k / needed exactly when the game fires trigger k.
                     fraction = time_since_fill_start / (effect.needed * interval)
 
                     if fraction > NEARLY_FULL then
@@ -405,23 +533,38 @@ Tracker.refresh = function (timing_mode)
     return true, fill, state.ready
 end
 
+-- ----------------------------------------------------------------------------
+-- Public API
+-- ----------------------------------------------------------------------------
+
+--- Returns whether a windup with at least one charge-dependent effect is being tracked.
+-- treturn: bool
 Tracker.is_charging_heavy_attack = function ()
     return state.active
 end
 
--- Returns the preallocated effect pool and the number of entries in use for the current windup.
+--- Returns the effects tracked during the current windup.
+-- The table is the preallocated pool; only its first `count` entries are in use, and it must not
+-- be modified.
+-- treturn: tab effect pool (see `effects`)
+-- treturn: int count of entries in use
 Tracker.get_relevant_charge_buffs = function ()
     return effects, state.effect_count
 end
 
+--- Returns whether every confirmed effect of the current windup has reached its maximum.
+-- treturn: bool
 Tracker.are_charge_buffs_maxed = function ()
     return state.ready
 end
 
+--- Returns the fill fraction last computed by `Tracker.refresh`.
+-- treturn: number fill fraction from 0 to 1
 Tracker.fill = function ()
     return state.fill
 end
 
+--- Stops tracking; used on game state changes and when the mod is enabled or disabled.
 Tracker.reset = function ()
     _reset_state()
 end

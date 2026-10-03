@@ -1,3 +1,15 @@
+--- The HUD element that draws Perfect Thrust's charge ring around the crosshair.
+-- A ring of square segments centred on the screen, like the game's crosshair. While a tracked
+-- windup runs, it asks the tracker each frame what to show: segments light up amber clockwise
+-- from the top as the charge-dependent effects build, the whole ring turns green at READY with
+-- an optional short pulse, and it hides as soon as the tracker stops. Colours and geometry are
+-- only rewritten when the lit count, the READY state or the settings change.
+--
+-- Loaded by DMF from the `register_hud_element` call in `PerfectThrust.lua` and returned as the
+-- `HudElementPerfectThrust` class, with the crosshair's visibility groups and without the HUD
+-- scale. Reads its settings from `mod._settings` and its state from `mod._tracker`.
+-- classmod: HudElementPerfectThrust
+-- author: LucLeto
 local mod = get_mod("PerfectThrust")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
@@ -8,28 +20,40 @@ local math_floor = math.floor
 local math_pi = math.pi
 local math_sin = math.sin
 
+-- ----------------------------------------------------------------------------
+-- Constants
+-- ----------------------------------------------------------------------------
+
+--- `display_mode` setting value that shows the ring only at READY.
 local DISPLAY_MODE_READY_ONLY = "ready_only"
 
+--- Number of segments in the ring, the first one at the top and the rest clockwise.
+-- Fixed so the widget passes can be built once; the angle of segment `i` is
+-- `RING_START_DEG + (i - 1) * 360 / SEGMENT_COUNT` degrees, in screen space with y pointing down.
 local SEGMENT_COUNT = 48
 local RING_START_DEG = -90
 local DEG_TO_RAD = math_pi / 180
 
+--- READY pulse length in seconds, and the extra segment size at its peak.
+-- The segment size follows a half sine from 1 to `1 + PULSE_EXTRA_SCALE` and back.
 local PULSE_DURATION = 0.25
 local PULSE_EXTRA_SCALE = 0.6
 
+--- Segment alpha of the unlit, charging and READY states, before the opacity setting is applied.
 local SEG_DIM_ALPHA = 80
 local SEG_LIT_ALPHA = 235
 local SEG_READY_ALPHA = 255
 
+--- Segment colours of the unlit, charging and READY states.
 local SEG_DIM_RGB = { 70, 82, 86 }
 local SEG_LIT_RGB = { 240, 190, 90 }
 local SEG_READY_RGB = { 120, 225, 140 }
 
+--- Style id and unit circle position of each segment, precomputed so the per-frame loops build no strings.
 local SEGMENT_STYLE_IDS = {}
 local SEGMENT_COS = {}
 local SEGMENT_SIN = {}
 
--- Segments run clockwise from the top of the ring.
 for i = 1, SEGMENT_COUNT do
     local angle_rad = (RING_START_DEG + (i - 1) * 360 / SEGMENT_COUNT) * DEG_TO_RAD
 
@@ -38,6 +62,14 @@ for i = 1, SEGMENT_COUNT do
     SEGMENT_SIN[i] = math_sin(angle_rad)
 end
 
+-- ----------------------------------------------------------------------------
+-- Helpers and definitions
+-- ----------------------------------------------------------------------------
+
+--- Returns how many segments a fill fraction lights.
+-- Any fill above zero lights at least one segment.
+-- number: fill_fraction fill from 0 to 1
+-- treturn: int lit segments from 0 to `SEGMENT_COUNT`
 local function _lit_count(fill_fraction)
     if fill_fraction <= 0 then
         return 0
@@ -54,6 +86,11 @@ local function _lit_count(fill_fraction)
     return lit
 end
 
+--- Builds the scenegraph and widget definitions.
+-- One 0x0 node centred on the screen, like the crosshair's pivot, and one widget with a `rect`
+-- pass per segment. Segment offsets are relative to the node, so the ring centre is the node
+-- position and the offset settings move it.
+-- treturn: tab definitions for `HudElementBase.init`
 local function _build_definitions()
     local passes = {}
 
@@ -86,10 +123,20 @@ local function _build_definitions()
     }
 end
 
+--- Scenegraph and widget definitions shared by every instance of the element.
 local Definitions = _build_definitions()
 
+--- The HUD element class, derived from the game's `HudElementBase`.
 local HudElementPerfectThrust = class("HudElementPerfectThrust", "HudElementBase")
 
+-- ----------------------------------------------------------------------------
+-- HudElementPerfectThrust
+-- ----------------------------------------------------------------------------
+
+--- Initialises the element, hidden, and applies the current settings.
+-- tab: parent HUD that owns the element
+-- int: draw_layer element draw layer
+-- number: start_scale initial UI scale
 HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
     HudElementPerfectThrust.super.init(self, parent, draw_layer, start_scale, Definitions)
 
@@ -107,11 +154,21 @@ HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
     self:_apply_display_settings(mod._settings)
 end
 
+--- Forgets the last drawn lit count and READY state, so the next refresh rewrites every segment colour.
 HudElementPerfectThrust._clear_render_cache = function (self)
     self._last_lit = nil
     self._last_ready = nil
 end
 
+--- Updates the ring from the tracker once per frame.
+-- Applies changed settings first. While no windup is tracked this costs one check; otherwise it
+-- refreshes the tracker, hides the ring when there is nothing to show (or, in `ready_only` mode,
+-- until READY), starts the pulse the first time READY is reached and advances it.
+-- number: dt frame delta time
+-- number: t time
+-- tab: ui_renderer active UI renderer
+-- ?tab: render_settings render settings
+-- param: input_service input service
 HudElementPerfectThrust.update = function (self, dt, t, ui_renderer, render_settings, input_service)
     HudElementPerfectThrust.super.update(self, dt, t, ui_renderer, render_settings, input_service)
 
@@ -176,6 +233,10 @@ HudElementPerfectThrust.update = function (self, dt, t, ui_renderer, render_sett
     end
 end
 
+--- Colours the segments for a fill and READY state, when either changed since the last call.
+-- At READY every segment is lit in the READY colour.
+-- number: fill fill fraction from 0 to 1
+-- bool: ready whether every tracked effect is at its maximum
 HudElementPerfectThrust._refresh_ring = function (self, fill, ready)
     local lit = ready and SEGMENT_COUNT or _lit_count(fill)
 
@@ -220,6 +281,9 @@ HudElementPerfectThrust._refresh_ring = function (self, fill, ready)
     widget.dirty = true
 end
 
+--- Positions and sizes every segment on the ring.
+-- Each segment is a square of the thickness setting, centred on the ring's radius.
+-- number: thickness_scale multiplier of the segment size, above 1 during the READY pulse
 HudElementPerfectThrust._apply_geometry = function (self, thickness_scale)
     local radius = self._radius
     local segment_size = self._thickness * thickness_scale
@@ -241,6 +305,7 @@ HudElementPerfectThrust._apply_geometry = function (self, thickness_scale)
     widget.dirty = true
 end
 
+--- Hides the ring, ends a running pulse and resets the per-windup display state.
 HudElementPerfectThrust._hide = function (self)
     self._shown = false
     self._ready_seen = false
@@ -259,6 +324,9 @@ HudElementPerfectThrust._hide = function (self)
     widget.dirty = true
 end
 
+--- Applies the position, opacity, radius and thickness settings.
+-- Records the settings version it applied, so `update` only calls it again after a change.
+-- tab: settings `mod._settings`
 HudElementPerfectThrust._apply_display_settings = function (self, settings)
     self._applied_settings_version = mod._settings_version
 

@@ -1,3 +1,12 @@
+--- Perfect Thrust's DMF mod data; the mod description and the settings menu.
+-- The returned table names the mod, makes it togglable and declares one `Charge indicator`
+-- group: display mode, READY timing, ring size, thickness, horizontal and vertical offset,
+-- opacity, READY pulse and debug output. Every option has a `<setting_id>_tooltip`.
+--
+-- Loaded by DMF as `mod_data`, as declared in `PerfectThrust.mod`. The defaults here must match
+-- the `settings` table in `PerfectThrust.lua`, which caches the values at runtime.
+-- module: PerfectThrust_data
+-- author: LucLeto
 local mod = get_mod("PerfectThrust")
 
 return {

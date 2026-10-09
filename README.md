@@ -5,7 +5,7 @@ The mod is purely visual. It never releases attacks, changes timings, simulates 
 
 ## Display
 
-The ring sits at the centre of the screen, around the crosshair, and is only drawn while you charge a heavy attack with at least one relevant effect active:
+The ring sits at the centre of the screen, around the crosshair, and is only drawn while you charge a heavy attack with at least one relevant effect active (colors shown are the defaults, see [Colors](#colors)):
 
 | State | Ring |
 | --- | --- |
@@ -84,9 +84,21 @@ In solo play the server runs locally, so there is no network delay and both mode
 | Vertical offset | 0 | -540 to 540 px from the screen centre |
 | Opacity | 100 % | 20-100 % |
 | READY pulse | On | Briefly enlarges the ring segments at READY |
+| Unfilled segment color | `70, 82, 86` (grey) | Any RGB color |
+| Charging progress color | `240, 190, 90` (amber) | Any RGB color |
+| READY color | `120, 225, 140` (green) | Any RGB color |
+| READY pulse color | `120, 225, 140` (same as READY) | Any RGB color, shown only during the READY pulse |
 | Debug output | Off | Prints charge-state transitions to chat |
 
 The ring scales with your resolution like the game's own crosshair and ignores the HUD scale option. Disabling the mod through the standard mod toggle hides the ring and stops all tracking.
+
+### Colors
+
+The four color pickers set only the RGB color of each ring state; they have no transparency of their own. Each state keeps its built-in transparency - unfilled segments 80, charging segments 235 and READY (including the pulse) 255 out of 255 - and the `Opacity` setting scales all of them, whatever colors you pick.
+
+`READY pulse color` is used only while the existing READY pulse runs, the 0.25-second enlargement of the segments when READY is first reached; the ring then switches to `READY color` for as long as you keep charging. With `READY pulse` off, the ring turns to `READY color` immediately and the pulse color is never shown. Because the pulse color defaults to the READY color, the pulse only changes the segment size unless you pick a different color.
+
+Color changes apply immediately, without reloading. Resetting a color setting restores the default listed above.
 
 ### Debug output
 

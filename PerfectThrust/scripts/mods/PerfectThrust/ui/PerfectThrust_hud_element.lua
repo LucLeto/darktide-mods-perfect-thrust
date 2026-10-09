@@ -1,9 +1,10 @@
 --- The HUD element that draws Perfect Thrust's charge ring around the crosshair.
 -- A ring of square segments centred on the screen, like the game's crosshair. While a tracked
--- windup runs, it asks the tracker each frame what to show: segments light up amber clockwise
--- from the top as the charge-dependent effects build, the whole ring turns green at READY with
--- an optional short pulse, and it hides as soon as the tracker stops. Colours and geometry are
--- only rewritten when the lit count, the READY state or the settings change.
+-- windup runs, it asks the tracker each frame what to show: segments light up clockwise from the
+-- top as the charge-dependent effects build, the whole ring switches to the READY colour at READY
+-- with an optional short pulse, and it hides as soon as the tracker stops. All four colours come
+-- from the settings (amber charging and green READY by default). Colours and geometry are only
+-- rewritten when the lit count, the READY state, the pulse colour phase or the settings change.
 --
 -- Loaded by DMF from the `register_hud_element` call in `PerfectThrust.lua` and returned as the
 -- `HudElementPerfectThrust` class, with the crosshair's visibility groups and without the HUD
@@ -15,6 +16,7 @@ local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local Tracker = mod._tracker
 
+local math_clamp = math.clamp
 local math_cos = math.cos
 local math_floor = math.floor
 local math_pi = math.pi
@@ -44,7 +46,9 @@ local SEG_DIM_ALPHA = 80
 local SEG_LIT_ALPHA = 235
 local SEG_READY_ALPHA = 255
 
---- Segment colours of the unlit, charging and READY states.
+--- Default segment colours of the unlit, charging and READY states, matching the colour settings'
+-- defaults. Used when a colour setting is invalid, `SEG_READY_RGB` also for the READY pulse
+-- colour; never written.
 local SEG_DIM_RGB = { 70, 82, 86 }
 local SEG_LIT_RGB = { 240, 190, 90 }
 local SEG_READY_RGB = { 120, 225, 140 }
@@ -84,6 +88,31 @@ local function _lit_count(fill_fraction)
     end
 
     return lit
+end
+
+--- Copies the RGB channels of a colour setting into an RGB array.
+-- DMF stores a colour setting as `{ a, r, g, b }`. Its alpha is ignored, because the segment
+-- alpha comes from the state and the opacity setting. Anything but a table with number RGB
+-- channels copies the fallback colour instead. Only `rgb` is written.
+-- tab: rgb RGB array to fill
+-- ?tab: argb colour setting value
+-- tab: fallback_rgb RGB array copied when the setting is invalid
+local function _copy_setting_rgb(rgb, argb, fallback_rgb)
+    if type(argb) == "table" then
+        local r, g, b = argb[2], argb[3], argb[4]
+
+        if type(r) == "number" and type(g) == "number" and type(b) == "number" then
+            rgb[1] = math_floor(math_clamp(r, 0, 255) + 0.5)
+            rgb[2] = math_floor(math_clamp(g, 0, 255) + 0.5)
+            rgb[3] = math_floor(math_clamp(b, 0, 255) + 0.5)
+
+            return
+        end
+    end
+
+    rgb[1] = fallback_rgb[1]
+    rgb[2] = fallback_rgb[2]
+    rgb[3] = fallback_rgb[3]
 end
 
 --- Builds the scenegraph and widget definitions.
@@ -146,6 +175,10 @@ HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
     self._shown = false
     self._ready_seen = false
     self._pulse_remaining = 0
+    self._dim_rgb = { 0, 0, 0 }
+    self._lit_rgb = { 0, 0, 0 }
+    self._ready_rgb = { 0, 0, 0 }
+    self._pulse_rgb = { 0, 0, 0 }
 
     self:_clear_render_cache()
 
@@ -154,10 +187,12 @@ HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
     self:_apply_display_settings(mod._settings)
 end
 
---- Forgets the last drawn lit count and READY state, so the next refresh rewrites every segment colour.
+--- Forgets the last drawn lit count, READY state and pulse colour phase, so the next refresh
+-- rewrites every segment colour.
 HudElementPerfectThrust._clear_render_cache = function (self)
     self._last_lit = nil
     self._last_ready = nil
+    self._last_pulse = nil
 end
 
 --- Updates the ring from the tracker once per frame.
@@ -229,36 +264,44 @@ HudElementPerfectThrust.update = function (self, dt, t, ui_renderer, render_sett
             self._pulse_remaining = 0
 
             self:_apply_geometry(1)
+
+            -- Back to the READY colour on the frame the segments return to their normal size.
+            self:_refresh_ring(fill, ready)
         end
     end
 end
 
---- Colours the segments for a fill and READY state, when either changed since the last call.
--- At READY every segment is lit in the READY colour.
+--- Colours the segments for a fill, READY state and pulse colour phase, when any of them changed
+-- since the last call.
+-- At READY every segment is lit in the READY colour, or in the READY pulse colour while the
+-- READY pulse runs.
 -- number: fill fill fraction from 0 to 1
 -- bool: ready whether every tracked effect is at its maximum
 HudElementPerfectThrust._refresh_ring = function (self, fill, ready)
     local lit = ready and SEGMENT_COUNT or _lit_count(fill)
+    local pulse = ready and self._pulse_remaining > 0
 
-    if lit == self._last_lit and ready == self._last_ready then
+    if lit == self._last_lit and ready == self._last_ready and pulse == self._last_pulse then
         return
     end
 
     self._last_lit = lit
     self._last_ready = ready
+    self._last_pulse = pulse
 
     local opacity = self._opacity
     local lit_alpha, lit_rgb
 
     if ready then
         lit_alpha = math_floor(SEG_READY_ALPHA * opacity)
-        lit_rgb = SEG_READY_RGB
+        lit_rgb = pulse and self._pulse_rgb or self._ready_rgb
     else
         lit_alpha = math_floor(SEG_LIT_ALPHA * opacity)
-        lit_rgb = SEG_LIT_RGB
+        lit_rgb = self._lit_rgb
     end
 
     local dim_alpha = math_floor(SEG_DIM_ALPHA * opacity)
+    local dim_rgb = self._dim_rgb
     local widget = self._widgets_by_name.ring
     local style = widget.style
 
@@ -272,9 +315,9 @@ HudElementPerfectThrust._refresh_ring = function (self, fill, ready)
             color[4] = lit_rgb[3]
         else
             color[1] = dim_alpha
-            color[2] = SEG_DIM_RGB[1]
-            color[3] = SEG_DIM_RGB[2]
-            color[4] = SEG_DIM_RGB[3]
+            color[2] = dim_rgb[1]
+            color[3] = dim_rgb[2]
+            color[4] = dim_rgb[3]
         end
     end
 
@@ -324,7 +367,7 @@ HudElementPerfectThrust._hide = function (self)
     widget.dirty = true
 end
 
---- Applies the position, opacity, radius and thickness settings.
+--- Applies the position, opacity, radius, thickness and colour settings.
 -- Records the settings version it applied, so `update` only calls it again after a change.
 -- tab: settings `mod._settings`
 HudElementPerfectThrust._apply_display_settings = function (self, settings)
@@ -336,6 +379,11 @@ HudElementPerfectThrust._apply_display_settings = function (self, settings)
     self._radius = settings.ring_radius or 32
     self._thickness = settings.ring_thickness or 3
     self._pulse_remaining = 0
+
+    _copy_setting_rgb(self._dim_rgb, settings.unfilled_color, SEG_DIM_RGB)
+    _copy_setting_rgb(self._lit_rgb, settings.charging_color, SEG_LIT_RGB)
+    _copy_setting_rgb(self._ready_rgb, settings.ready_color, SEG_READY_RGB)
+    _copy_setting_rgb(self._pulse_rgb, settings.ready_pulse_color, SEG_READY_RGB)
 
     self:_apply_geometry(1)
     self:_clear_render_cache()

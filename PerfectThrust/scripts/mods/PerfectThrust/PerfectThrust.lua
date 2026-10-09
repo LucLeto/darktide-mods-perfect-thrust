@@ -18,6 +18,7 @@ mod.version = mod.get_metadata and mod:get_metadata("version") or "unknown"
 -- ----------------------------------------------------------------------------
 
 --- Cached setting values by setting id, initialised with the defaults from `PerfectThrust_data.lua`.
+-- Colour settings hold DMF's `{ a, r, g, b }` tables; they are only read, never written.
 local settings = {
     display_mode = "progress",
     timing_mode = "predicted",
@@ -27,6 +28,10 @@ local settings = {
     offset_y = 0,
     ring_opacity = 100,
     ready_pulse = true,
+    unfilled_color = { 255, 70, 82, 86 },
+    charging_color = { 255, 240, 190, 90 },
+    ready_color = { 255, 120, 225, 140 },
+    ready_pulse_color = { 255, 120, 225, 140 },
     debug_logging = false
 }
 
@@ -40,6 +45,10 @@ local SETTING_IDS = {
     "offset_y",
     "ring_opacity",
     "ready_pulse",
+    "unfilled_color",
+    "charging_color",
+    "ready_color",
+    "ready_pulse_color",
     "debug_logging"
 }
 

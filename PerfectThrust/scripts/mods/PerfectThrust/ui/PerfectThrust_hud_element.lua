@@ -41,17 +41,12 @@ local DEG_TO_RAD = math_pi / 180
 local PULSE_DURATION = 0.25
 local PULSE_EXTRA_SCALE = 0.6
 
---- Segment alpha of the unlit, charging and READY states, before the opacity setting is applied.
-local SEG_DIM_ALPHA = 80
-local SEG_LIT_ALPHA = 235
-local SEG_READY_ALPHA = 255
-
---- Default segment colours of the unlit, charging and READY states, matching the colour settings'
--- defaults. Used when a colour setting is invalid, `SEG_READY_RGB` also for the READY pulse
--- colour; never written.
-local SEG_DIM_RGB = { 70, 82, 86 }
-local SEG_LIT_RGB = { 240, 190, 90 }
-local SEG_READY_RGB = { 120, 225, 140 }
+--- Default segment colours `{ a, r, g, b }` of the unlit, charging and READY states, matching the
+-- colour settings' defaults. Used when a colour setting is invalid, `SEG_READY_COLOR` also for
+-- the READY pulse colour; never written.
+local SEG_DIM_COLOR = { 80, 70, 82, 86 }
+local SEG_LIT_COLOR = { 235, 240, 190, 90 }
+local SEG_READY_COLOR = { 255, 120, 225, 140 }
 
 --- Style id and unit circle position of each segment, precomputed so the per-frame loops build no strings.
 local SEGMENT_STYLE_IDS = {}
@@ -90,29 +85,31 @@ local function _lit_count(fill_fraction)
     return lit
 end
 
---- Copies the RGB channels of a colour setting into an RGB array.
--- DMF stores a colour setting as `{ a, r, g, b }`. Its alpha is ignored, because the segment
--- alpha comes from the state and the opacity setting. Anything but a table with number RGB
--- channels copies the fallback colour instead. Only `rgb` is written.
--- tab: rgb RGB array to fill
+--- Copies a colour setting into a colour array.
+-- DMF stores a colour setting as `{ a, r, g, b }`, the layout of a widget style colour. Each
+-- channel is clamped to 0-255 and rounded. Anything but a table with four number channels copies
+-- the fallback colour instead. Only `color` is written.
+-- tab: color `{ a, r, g, b }` array to fill
 -- ?tab: argb colour setting value
--- tab: fallback_rgb RGB array copied when the setting is invalid
-local function _copy_setting_rgb(rgb, argb, fallback_rgb)
+-- tab: fallback `{ a, r, g, b }` colour copied when the setting is invalid
+local function _copy_setting_color(color, argb, fallback)
     if type(argb) == "table" then
-        local r, g, b = argb[2], argb[3], argb[4]
+        local a, r, g, b = argb[1], argb[2], argb[3], argb[4]
 
-        if type(r) == "number" and type(g) == "number" and type(b) == "number" then
-            rgb[1] = math_floor(math_clamp(r, 0, 255) + 0.5)
-            rgb[2] = math_floor(math_clamp(g, 0, 255) + 0.5)
-            rgb[3] = math_floor(math_clamp(b, 0, 255) + 0.5)
+        if type(a) == "number" and type(r) == "number" and type(g) == "number" and type(b) == "number" then
+            color[1] = math_floor(math_clamp(a, 0, 255) + 0.5)
+            color[2] = math_floor(math_clamp(r, 0, 255) + 0.5)
+            color[3] = math_floor(math_clamp(g, 0, 255) + 0.5)
+            color[4] = math_floor(math_clamp(b, 0, 255) + 0.5)
 
             return
         end
     end
 
-    rgb[1] = fallback_rgb[1]
-    rgb[2] = fallback_rgb[2]
-    rgb[3] = fallback_rgb[3]
+    color[1] = fallback[1]
+    color[2] = fallback[2]
+    color[3] = fallback[3]
+    color[4] = fallback[4]
 end
 
 --- Builds the scenegraph and widget definitions.
@@ -130,7 +127,7 @@ local function _build_definitions()
             style = {
                 offset = { 0, 0, 1 },
                 size = { 3, 3 },
-                color = { SEG_DIM_ALPHA, SEG_DIM_RGB[1], SEG_DIM_RGB[2], SEG_DIM_RGB[3] }
+                color = { SEG_DIM_COLOR[1], SEG_DIM_COLOR[2], SEG_DIM_COLOR[3], SEG_DIM_COLOR[4] }
             }
         }
     end
@@ -169,16 +166,15 @@ local HudElementPerfectThrust = class("HudElementPerfectThrust", "HudElementBase
 HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
     HudElementPerfectThrust.super.init(self, parent, draw_layer, start_scale, Definitions)
 
-    self._opacity = 1
     self._radius = 32
     self._thickness = 3
     self._shown = false
     self._ready_seen = false
     self._pulse_remaining = 0
-    self._dim_rgb = { 0, 0, 0 }
-    self._lit_rgb = { 0, 0, 0 }
-    self._ready_rgb = { 0, 0, 0 }
-    self._pulse_rgb = { 0, 0, 0 }
+    self._dim_color = { 0, 0, 0, 0 }
+    self._lit_color = { 0, 0, 0, 0 }
+    self._ready_color = { 0, 0, 0, 0 }
+    self._pulse_color = { 0, 0, 0, 0 }
 
     self:_clear_render_cache()
 
@@ -289,36 +285,26 @@ HudElementPerfectThrust._refresh_ring = function (self, fill, ready)
     self._last_ready = ready
     self._last_pulse = pulse
 
-    local opacity = self._opacity
-    local lit_alpha, lit_rgb
+    local lit_color
 
     if ready then
-        lit_alpha = math_floor(SEG_READY_ALPHA * opacity)
-        lit_rgb = pulse and self._pulse_rgb or self._ready_rgb
+        lit_color = pulse and self._pulse_color or self._ready_color
     else
-        lit_alpha = math_floor(SEG_LIT_ALPHA * opacity)
-        lit_rgb = self._lit_rgb
+        lit_color = self._lit_color
     end
 
-    local dim_alpha = math_floor(SEG_DIM_ALPHA * opacity)
-    local dim_rgb = self._dim_rgb
+    local dim_color = self._dim_color
     local widget = self._widgets_by_name.ring
     local style = widget.style
 
     for i = 1, SEGMENT_COUNT do
         local color = style[SEGMENT_STYLE_IDS[i]].color
+        local source = i <= lit and lit_color or dim_color
 
-        if i <= lit then
-            color[1] = lit_alpha
-            color[2] = lit_rgb[1]
-            color[3] = lit_rgb[2]
-            color[4] = lit_rgb[3]
-        else
-            color[1] = dim_alpha
-            color[2] = dim_rgb[1]
-            color[3] = dim_rgb[2]
-            color[4] = dim_rgb[3]
-        end
+        color[1] = source[1]
+        color[2] = source[2]
+        color[3] = source[3]
+        color[4] = source[4]
     end
 
     widget.dirty = true
@@ -367,7 +353,7 @@ HudElementPerfectThrust._hide = function (self)
     widget.dirty = true
 end
 
---- Applies the position, opacity, radius, thickness and colour settings.
+--- Applies the position, radius, thickness and colour settings.
 -- Records the settings version it applied, so `update` only calls it again after a change.
 -- tab: settings `mod._settings`
 HudElementPerfectThrust._apply_display_settings = function (self, settings)
@@ -375,15 +361,14 @@ HudElementPerfectThrust._apply_display_settings = function (self, settings)
 
     self:set_scenegraph_position("perfect_thrust_ring", settings.offset_x or 0, settings.offset_y or 0)
 
-    self._opacity = (settings.ring_opacity or 100) / 100
     self._radius = settings.ring_radius or 32
     self._thickness = settings.ring_thickness or 3
     self._pulse_remaining = 0
 
-    _copy_setting_rgb(self._dim_rgb, settings.unfilled_color, SEG_DIM_RGB)
-    _copy_setting_rgb(self._lit_rgb, settings.charging_color, SEG_LIT_RGB)
-    _copy_setting_rgb(self._ready_rgb, settings.ready_color, SEG_READY_RGB)
-    _copy_setting_rgb(self._pulse_rgb, settings.ready_pulse_color, SEG_READY_RGB)
+    _copy_setting_color(self._dim_color, settings.unfilled_color, SEG_DIM_COLOR)
+    _copy_setting_color(self._lit_color, settings.charging_color, SEG_LIT_COLOR)
+    _copy_setting_color(self._ready_color, settings.ready_color, SEG_READY_COLOR)
+    _copy_setting_color(self._pulse_color, settings.ready_pulse_color, SEG_READY_COLOR)
 
     self:_apply_geometry(1)
     self:_clear_render_cache()

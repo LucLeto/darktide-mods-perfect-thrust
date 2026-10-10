@@ -82,23 +82,24 @@ In solo play the server runs locally, so there is no network delay and both mode
 | Ring thickness | 3 | 1-10 px per segment at 1080p |
 | Horizontal offset | 0 | -960 to 960 px from the screen centre |
 | Vertical offset | 0 | -540 to 540 px from the screen centre |
-| Opacity | 100 % | 20-100 % |
 | READY pulse | On | Briefly enlarges the ring segments at READY |
-| Unfilled segment color | `70, 82, 86` (grey) | Any RGB color |
-| Charging progress color | `240, 190, 90` (amber) | Any RGB color |
-| READY color | `120, 225, 140` (green) | Any RGB color |
-| READY pulse color | `120, 225, 140` (same as READY) | Any RGB color, shown only during the READY pulse |
+| Unfilled segment color | RGB `70, 82, 86`, alpha `80` (faint grey) | Any color and opacity |
+| Charging progress color | RGB `240, 190, 90`, alpha `235` (amber) | Any color and opacity |
+| READY color | RGB `120, 225, 140`, alpha `255` (green) | Any color and opacity |
+| READY pulse color | RGB `120, 225, 140`, alpha `255` (same as READY) | Any color and opacity, shown only during the READY pulse |
 | Debug output | Off | Prints charge-state transitions to chat |
 
 The ring scales with your resolution like the game's own crosshair and ignores the HUD scale option. Disabling the mod through the standard mod toggle hides the ring and stops all tracking.
 
 ### Colors
 
-The four color pickers set only the RGB color of each ring state; they have no transparency of their own. Each state keeps its built-in transparency - unfilled segments 80, charging segments 235 and READY (including the pulse) 255 out of 255 - and the `Opacity` setting scales all of them, whatever colors you pick.
+Each ring state has its own color picker with an alpha channel, so color and opacity are set per state. Alpha runs from 0 (invisible) to 255 (fully opaque); by default the unfilled segments are faint (80), the charging segments nearly opaque (235) and READY fully opaque (255).
 
 `READY pulse color` is used only while the existing READY pulse runs, the 0.25-second enlargement of the segments when READY is first reached; the ring then switches to `READY color` for as long as you keep charging. With `READY pulse` off, the ring turns to `READY color` immediately and the pulse color is never shown. Because the pulse color defaults to the READY color, the pulse only changes the segment size unless you pick a different color.
 
 Color changes apply immediately, without reloading. Resetting a color setting restores the default listed above.
+
+**Updating from 1.0.0:** the separate `Opacity` setting has been replaced by the alpha of the four colors. On the first start after the update, your old `Opacity` value is applied once to the alpha of every color - at 50 %, for example, the defaults become 40, 117, 127 and 127 - so the ring looks exactly as before. After that the old setting is removed, and you adjust each color's alpha directly.
 
 ### Debug output
 

@@ -12,10 +12,13 @@
 -- without the network delay, while the replicated stacks decide which effects count at all. The
 -- `confirmed` timing mode uses only the replicated stacks.
 --
--- A windup without any such effect can fall back to regular heavy attack readiness: the ring then
--- fills up to the earliest moment a release still gives the heavy attack, resolved from the
--- weapon's heavy attack input and the action's own heavy attack chain time. The tracking mode is
--- chosen once when the windup starts, so the effects always take priority over the fallback.
+-- With the `show_heavy_threshold` setting on, the heavy attack threshold is tracked too: the
+-- earliest moment a release still gives the heavy attack, resolved from the weapon's heavy attack
+-- input and the action's own heavy attack chain time. A windup without any such effect then fills
+-- up to that threshold and is READY there. A windup with effects shows one ring from its start
+-- over the expected charge: charging, then heavy attack available once the threshold is reached,
+-- then READY once the effects are at their maximum. The tracking mode is chosen once when the
+-- windup starts, and READY always follows the effects when there are any.
 --
 -- Loaded by `PerfectThrust.lua` through `mod:io_dofile` and stored as `mod._tracker`. The windup
 -- hooks there feed `on_windup_start`, `on_windup_update` and `on_windup_finish`, and the HUD
@@ -98,6 +101,7 @@ local descriptor_cache = {}
 -- `offset` baseline stacks a parent buff keeps on its child, subtracted from the stack count;
 -- `cap` stacks at which the effect is at its maximum;
 -- `needed` windup triggers needed to reach `cap`;
+-- `ready_t` time in action of the trigger that is expected to reach `cap`;
 -- `predictable` whether every trigger is known to grant a stack (no proc chance, no cooldown);
 -- `observed` replicated stack count after the offset;
 -- `start_observed` `observed` when the windup started;
@@ -118,6 +122,7 @@ for i = 1, MAX_EFFECTS do
         offset = 0,
         cap = 1,
         needed = 1,
+        ready_t = 0,
         predictable = false,
         observed = 0,
         start_observed = 0,
@@ -129,7 +134,10 @@ end
 --- The windup being tracked.
 -- `active` is set only while a local windup with at least one charge-dependent effect, or with a
 -- resolved regular heavy attack threshold, runs; `mode` is `MODE_EFFECTS` or `MODE_HEAVY_READINESS`
--- accordingly, and `heavy_threshold` the time in action at which the heavy attack can be released.
+-- accordingly, and `heavy_threshold` the time in action at which the heavy attack can be released,
+-- or 0 when it is not tracked. With effects and a heavy threshold, `ready_t` is the expected time
+-- of READY, `heavy_fraction` the share of the ring filled at the heavy threshold and
+-- `heavy_available` whether that threshold has been reached; it stays set for the rest of the windup.
 -- `action`, `action_name` and `start_t` identify that windup and are checked against the
 -- weapon_action component every frame. `first_trigger_t` is the time in action of the first
 -- trigger, `interval` the time between triggers, `triggers` how many the game has fired so far
@@ -139,6 +147,9 @@ local state = {
     active = false,
     mode = nil,
     heavy_threshold = 0,
+    ready_t = 0,
+    heavy_fraction = 0,
+    heavy_available = false,
     action = nil,
     unit = nil,
     action_name = nil,
@@ -313,6 +324,9 @@ local function _reset_state()
     state.active = false
     state.mode = nil
     state.heavy_threshold = 0
+    state.ready_t = 0
+    state.heavy_fraction = 0
+    state.heavy_available = false
     state.action = nil
     state.unit = nil
     state.action_name = nil
@@ -497,9 +511,10 @@ end
 -- Scans the active buffs once and keeps the effects that belong to the wielded weapon or to no
 -- weapon and whose own conditions let them stack in this windup; a windup without a trigger time
 -- can have none. An instance override of `max_stacks` on a parent buff caps its children, as in
--- `WeaponTraitParentProcBuff`. When none is found and the
--- `show_regular_heavy_readiness` setting is on, it tracks the regular heavy attack threshold
--- instead; without a resolvable threshold it stays idle.
+-- `WeaponTraitParentProcBuff`. With the `show_heavy_threshold` setting on, it also resolves the
+-- heavy attack threshold: a windup with effects then gets the expected READY time and the heavy
+-- threshold's share of the ring, and a windup without effects tracks that threshold alone. Without
+-- effects and without a resolvable threshold it stays idle.
 -- tab: action windup action instance
 -- number: t fixed-step time the action started at
 Tracker.on_windup_start = function (action, t)
@@ -516,9 +531,9 @@ Tracker.on_windup_start = function (action, t)
     -- Every charge-dependent effect stacks from the windup trigger. A windup without a trigger time
     -- (the game ignores alternative chain lists when computing it) can still have a heavy attack.
     local has_trigger_time = first_trigger_t and first_trigger_t ~= math_huge
-    local show_regular_heavy_readiness = mod._settings.show_regular_heavy_readiness
+    local show_heavy_threshold = mod._settings.show_heavy_threshold
 
-    if not has_trigger_time and not show_regular_heavy_readiness then
+    if not has_trigger_time and not show_heavy_threshold then
         return
     end
 
@@ -532,6 +547,7 @@ Tracker.on_windup_start = function (action, t)
     end
 
     local action_settings = action._action_settings
+    local interval = action_settings and action_settings.proc_time_interval or PROC_INTERVAL_DEFAULT
     local wielded_slot = inventory_component.wielded_slot
     local count = 0
     local buff_count = has_trigger_time and #buffs or 0
@@ -565,6 +581,7 @@ Tracker.on_windup_start = function (action, t)
                 effect.offset = descriptor.offset
                 effect.cap = cap
                 effect.needed = math_ceil(cap / descriptor.per_trigger)
+                effect.ready_t = first_trigger_t + (effect.needed - 1) * interval
                 effect.predictable = descriptor.predictable
                 effect.observed = _observed_stacks(buff_extension, effect)
                 effect.start_observed = effect.observed
@@ -583,30 +600,44 @@ Tracker.on_windup_start = function (action, t)
     local action_name = weapon_action_component.current_action_name
     local heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time
 
-    if count == 0 then
-        if show_regular_heavy_readiness then
-            heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time = _resolve_heavy_threshold(action, action_settings, weapon_action_component)
+    if show_heavy_threshold then
+        heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time = _resolve_heavy_threshold(action, action_settings, weapon_action_component)
+    end
+
+    if count == 0 and not heavy_threshold then
+        -- Windups without a trigger time stay silent, as they always have.
+        if has_trigger_time and mod._settings.debug_logging then
+            mod:echo(DEBUG_PREFIX .. (show_heavy_threshold and "windup %s: no charge-dependent effect, no heavy attack threshold" or "windup %s: no charge-dependent effect"), tostring(action_name))
         end
 
-        if not heavy_threshold then
-            -- Windups without a trigger time stay silent, as they always have.
-            if has_trigger_time and mod._settings.debug_logging then
-                mod:echo(DEBUG_PREFIX .. (show_regular_heavy_readiness and "windup %s: no charge-dependent effect, no heavy attack threshold" or "windup %s: no charge-dependent effect"), tostring(action_name))
-            end
+        return
+    end
 
-            return
+    -- The ring of a windup with effects spans the expected charge up to the slowest effect's cap.
+    local ready_t = heavy_threshold or 0
+
+    if heavy_threshold then
+        for i = 1, count do
+            local effect_ready_t = effects[i].ready_t
+
+            if effect_ready_t > ready_t then
+                ready_t = effect_ready_t
+            end
         end
     end
 
     state.active = true
-    state.mode = heavy_threshold and MODE_HEAVY_READINESS or MODE_EFFECTS
+    state.mode = count > 0 and MODE_EFFECTS or MODE_HEAVY_READINESS
     state.heavy_threshold = heavy_threshold or 0
+    state.ready_t = ready_t
+    state.heavy_fraction = heavy_threshold and heavy_threshold / ready_t or 0
+    state.heavy_available = false
     state.action = action
     state.unit = action._player_unit
     state.action_name = action_name
     state.start_t = t
     state.first_trigger_t = has_trigger_time and first_trigger_t or math_huge
-    state.interval = action_settings and action_settings.proc_time_interval or PROC_INTERVAL_DEFAULT
+    state.interval = interval
     state.triggers = 0
     state.time_in_action = 0
     state.buff_extension = buff_extension
@@ -616,10 +647,14 @@ Tracker.on_windup_start = function (action, t)
     state.ready = false
 
     if mod._settings.debug_logging then
-        if heavy_threshold then
+        if count == 0 then
             mod:echo(DEBUG_PREFIX .. "windup %s: regular heavy, threshold %.2fs (%s hold %.2fs, chain %.2fs, time scale %.2f, buffer %.2fs)", tostring(action_name), heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time)
         else
             mod:echo(DEBUG_PREFIX .. "windup %s: first trigger %.2fs, step %.2fs, effects: %s", tostring(action_name), first_trigger_t, state.interval, _debug_effects())
+
+            if heavy_threshold then
+                mod:echo(DEBUG_PREFIX .. "heavy threshold %.2fs (%s hold %.2fs, chain %.2fs, time scale %.2f, buffer %.2fs), expected READY %.2fs", heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time, ready_t)
+            end
         end
     end
 end
@@ -681,13 +716,21 @@ end
 -- A windup tracked for regular heavy attack readiness is visible from its start and fills with
 -- the fixed-step time in action up to the heavy threshold, where it is READY. This runs entirely
 -- on the local windup timing, so `timing_mode` does not apply to it.
+--
+-- A windup with effects and a heavy threshold is visible from its start too, and its ring spans
+-- the expected charge: it fills with the time in action up to the heavy threshold's share of the
+-- ring, then reports the heavy attack as available and fills the rest by the slowest effect, by
+-- time up to its expected cap in `predicted` mode for predictable effects and by the replicated
+-- stacks otherwise. Effects that are not confirmed yet hold the fill below full. READY follows the
+-- same rule as above and additionally waits for the heavy threshold.
 -- string: timing_mode `predicted` or `confirmed`
 -- treturn: bool whether the ring should be visible
 -- treturn: number fill fraction from 0 to 1
 -- treturn: bool whether every confirmed effect is at its maximum, or the heavy threshold is reached
+-- treturn: bool whether the heavy attack is available while the effects still build
 Tracker.refresh = function (timing_mode)
     if not state.active then
-        return false, 0, false
+        return false, 0, false, false
     end
 
     local weapon_action_component = state.weapon_action_component
@@ -697,7 +740,7 @@ Tracker.refresh = function (timing_mode)
         _debug_finish("action ended")
         _reset_state()
 
-        return false, 0, false
+        return false, 0, false, false
     end
 
     if state.mode == MODE_HEAVY_READINESS then
@@ -722,21 +765,28 @@ Tracker.refresh = function (timing_mode)
 
         state.fill = fill
 
-        return true, fill, state.ready
+        return true, fill, state.ready, false
     end
 
     local buff_extension = state.buff_extension
     local predicted = timing_mode ~= TIMING_MODE_CONFIRMED
     local triggers = state.triggers
     local interval = state.interval
+    local time_in_action = state.time_in_action
     local fill_start_t = state.first_trigger_t - interval
-    local time_since_fill_start = state.time_in_action - fill_start_t
+    local time_since_fill_start = time_in_action - fill_start_t
     local fill = 1
     local confirmed_count = 0
+    local heavy_threshold = state.heavy_threshold
+    local shows_heavy = heavy_threshold > 0
+    local heavy_available = shows_heavy and (state.heavy_available or time_in_action >= heavy_threshold)
+    local heavy_fraction = state.heavy_fraction
+    local ring_fill = 1
 
     for i = 1, state.effect_count do
         local effect = effects[i]
         local observed = _observed_stacks(buff_extension, effect)
+        local fraction
 
         effect.observed = observed
 
@@ -747,7 +797,7 @@ Tracker.refresh = function (timing_mode)
                 effect.confirmed = true
 
                 if mod._settings.debug_logging then
-                    mod:echo(DEBUG_PREFIX .. "%s confirmed at %d/%d after %.2fs (%d triggers)", effect.child_name, observed, effect.cap, state.time_in_action, triggers)
+                    mod:echo(DEBUG_PREFIX .. "%s confirmed at %d/%d after %.2fs (%d triggers)", effect.child_name, observed, effect.cap, time_in_action, triggers)
                 end
             end
         end
@@ -756,7 +806,6 @@ Tracker.refresh = function (timing_mode)
             confirmed_count = confirmed_count + 1
 
             local cap = effect.cap
-            local fraction
 
             if observed >= cap then
                 fraction = 1
@@ -778,30 +827,89 @@ Tracker.refresh = function (timing_mode)
                 fill = fraction
             end
         end
+
+        -- Past the heavy threshold the ring covers the rest of the expected charge; an effect that
+        -- has not been confirmed yet is expected to stack on time but never fills the ring.
+        if heavy_available then
+            local progress
+
+            if fraction == 1 then
+                progress = 1
+            elseif predicted and effect.predictable then
+                local span = effect.ready_t - heavy_threshold
+
+                progress = span > 0 and (time_in_action - heavy_threshold) / span or NEARLY_FULL
+
+                if progress > NEARLY_FULL then
+                    progress = NEARLY_FULL
+                end
+            else
+                progress = fraction or 0
+            end
+
+            progress = heavy_fraction + (1 - heavy_fraction) * progress
+
+            if progress < ring_fill then
+                ring_fill = progress
+            end
+        end
     end
 
-    if confirmed_count == 0 then
-        state.fill = 0
+    if not shows_heavy then
+        if confirmed_count == 0 then
+            state.fill = 0
 
-        return false, 0, false
+            return false, 0, false, false
+        end
+
+        if state.ready then
+            fill = 1
+        elseif fill >= 1 then
+            fill = 1
+            state.ready = true
+
+            if mod._settings.debug_logging then
+                mod:echo(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
+            end
+        elseif fill < 0 then
+            fill = 0
+        end
+
+        state.fill = fill
+
+        return true, fill, state.ready, false
+    end
+
+    if heavy_available and not state.heavy_available then
+        state.heavy_available = true
+
+        if mod._settings.debug_logging then
+            mod:echo(DEBUG_PREFIX .. "heavy attack available after %.2fs", time_in_action)
+        end
     end
 
     if state.ready then
         fill = 1
-    elseif fill >= 1 then
+    elseif heavy_available and confirmed_count > 0 and fill >= 1 then
         fill = 1
         state.ready = true
 
         if mod._settings.debug_logging then
-            mod:echo(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", state.time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
+            mod:echo(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
         end
-    elseif fill < 0 then
-        fill = 0
+    else
+        fill = heavy_available and ring_fill or time_in_action / state.ready_t
+
+        if fill > NEARLY_FULL then
+            fill = NEARLY_FULL
+        elseif fill < 0 then
+            fill = 0
+        end
     end
 
     state.fill = fill
 
-    return true, fill, state.ready
+    return true, fill, state.ready, heavy_available
 end
 
 -- ----------------------------------------------------------------------------

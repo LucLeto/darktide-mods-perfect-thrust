@@ -1,8 +1,8 @@
 --- Perfect Thrust's DMF mod data; the mod description and the settings menu.
 -- The returned table names the mod, makes it togglable and declares one `Charge indicator`
--- group: display mode, READY timing, regular heavy attack readiness, ring size, thickness,
--- horizontal and vertical offset, READY pulse, the unfilled, charging, READY and READY pulse
--- colours and debug output. Every option has a `<setting_id>_tooltip`. Colours are DMF colour
+-- group: display mode, READY timing, heavy attack threshold, ring size, thickness, horizontal and
+-- vertical offset, READY pulse, the unfilled, charging, heavy attack available, READY and READY
+-- pulse colours and debug output. Every option has a `<setting_id>_tooltip`. Colours are DMF colour
 -- pickers with alpha, stored as `{ a, r, g, b }`; their alpha replaces the opacity setting of
 -- earlier versions, which `PerfectThrust.lua` migrates once.
 --
@@ -44,10 +44,10 @@ return {
                         }
                     },
                     {
-                        setting_id = "show_regular_heavy_readiness",
+                        setting_id = "show_heavy_threshold",
                         type = "checkbox",
                         default_value = true,
-                        tooltip = "show_regular_heavy_readiness_tooltip"
+                        tooltip = "show_heavy_threshold_tooltip"
                     },
                     {
                         setting_id = "ring_radius",
@@ -104,6 +104,13 @@ return {
                         default_value = { 235, 240, 190, 90 }, -- ARGB
                         has_alpha = true,
                         tooltip = "charging_color_tooltip"
+                    },
+                    {
+                        setting_id = "heavy_available_color",
+                        type = "color",
+                        default_value = { 229, 233, 255, 90 }, -- ARGB
+                        has_alpha = true,
+                        tooltip = "heavy_available_color_tooltip"
                     },
                     {
                         setting_id = "ready_color",

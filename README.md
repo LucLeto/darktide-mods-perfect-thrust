@@ -17,7 +17,7 @@ The ring sits at the centre of the screen, around the crosshair. With `Show heav
 | READY - every tracked effect is at its maximum, or, without effects, the attack counts as a heavy attack | Fully green, with a brief pulse |
 | Released, cancelled, weapon switched, downed | Hidden immediately |
 
-With effects, one ring spans the whole expected charge. With Thrust on a combat axe at normal attack speed, for example, a release counts as a heavy attack from 0.35 s and Thrust is capped at 0.90 s, so the ring turns lime a little over a third of the way round and green when it is full. Without effects the ring ends at the heavy attack threshold and turns green there. After READY the ring stays full for as long as you keep charging; holding longer gains nothing, but you can of course keep charging for other reasons.
+With effects, one ring spans the whole expected charge. With Thrust on a combat axe, for example, a release counts as a heavy attack from 0.35 s and Thrust is capped at 0.90 s, so the ring turns lime a little over a third of the way round and green when it is full. Without effects the ring ends at the heavy attack threshold and turns green there. After READY the ring stays full for as long as you keep charging; holding longer gains nothing, but you can of course keep charging for other reasons.
 
 In `Progress + READY` mode the ring starts filling as soon as you press attack, so a light attack briefly shows a partially filled ring until it is released. With `Show heavy attack threshold` off, the ring only appears once the first stack of an effect has arrived, shortly after the attack has become a heavy attack, so light attacks never make it flicker.
 
@@ -66,7 +66,7 @@ Conditional effects are checked when you start charging: an effect whose conditi
 
 ### How the stacks build
 
-The first stack is granted at the charging action's latest chain time - on most weapons the moment the heavy swing could start at normal attack speed, shortly after a release already counts as a heavy attack - then one more each interval. According to kuli's guides the interval is 0.25 s on most weapons and 0.2 s on Pickaxes, Thunder Hammers and the Chainaxe Mk IV; attack speed buffs change neither the first stack nor the interval. A 3-stack effect is therefore capped two intervals after its first stack, and a 4-stack effect such as Crunch! three intervals after it. With several effects, READY waits for the slowest one - with Thrust and Crunch! on an Ogryn, READY follows Crunch!.
+The first stack is granted at the charging action's latest chain time - on most weapons the moment the heavy swing can start, shortly after a release already counts as a heavy attack - then one more each interval. According to kuli's guides the interval is 0.25 s on most weapons and 0.2 s on Pickaxes, Thunder Hammers and the Chainaxe Mk IV; attack speed buffs change neither the first stack nor the interval. A 3-stack effect is therefore capped two intervals after its first stack, and a 4-stack effect such as Crunch! three intervals after it. With several effects, READY waits for the slowest one - with Thrust and Crunch! on an Ogryn, READY follows Crunch!.
 
 ## Heavy attack threshold
 
@@ -77,13 +77,13 @@ With `Show heavy attack threshold` on (the default), the ring also marks the ear
 
 Turn the setting off to show the ring only while the effects above build, as in earlier versions.
 
-The threshold is read from the game for each charge, never hard-coded. The game decides light or heavy when you let go: once the weapon's heavy attack input has been held for its hold time (0.25 to 0.45 s depending on the weapon), a release is queued as a heavy attack. The charging action then starts the heavy swing at its own `chain_time`, which differs between weapons, marks and combo steps and is shortened by attack speed. A queued heavy waits for that moment for up to its buffer time (0.5 s), so:
+The threshold is read from the game for each charge, never hard-coded. The game decides light or heavy when you let go: once the weapon's heavy attack input has been held for its hold time (0.25 to 0.45 s depending on the weapon), a release is queued as a heavy attack. The charging action then starts the heavy swing at its own `chain_time`, which differs between weapons, marks and combo steps. A queued heavy waits for that moment for up to its buffer time (0.5 s), so:
 
 * The threshold is the end of the heavy attack input's hold. On most weapons this is before the heavy swing can start, so the ring can turn lime or green shortly before the swing begins after you let go - the attack is the same as if you had held on.
 * The game starts the hold timer when you press attack. In an attack chain that is often while the previous swing still runs, so part of the hold - or all of it - is done before the new charge even starts. The mod reads that timer from the game's input handling, so the threshold comes correspondingly earlier, or right at the start of the charge.
-* Only if the action's `chain_time` (divided by the attack speed time scale, like the game does) comes more than the buffer time after the end of the hold, the threshold waits until releasing is within the buffer time of it. No current weapon needs this.
+* Only if the action's `chain_time` (divided by the action's time scale, like the game does) comes more than the buffer time after the end of the hold, the threshold waits until releasing is within the buffer time of it. No current weapon needs this.
 
-Melee attack speed shortens `chain_time` and speeds up the animations, but not the hold time: the game measures the hold in real time, so the moment a release counts as a heavy attack does not move with attack speed.
+Melee attack speed buffs, such as Maniac with Martyrdom stacks, speed up the swings but not the charge. The game applies attack speed to the light and heavy swing actions, while the charging action keeps its normal speed (debug output shows `time scale 1.00`) and the hold is measured in real time. Neither the heavy attack threshold nor the charge-dependent effects move with attack speed; a faster swing only brings you to the next charge sooner.
 
 The threshold runs entirely on your client's own windup timer, as no server stacks are involved, so `READY timing` does not apply to it: the lime phase starts at the same moment in both modes. If no threshold can be resolved for a charge, a charge without effects shows no ring, and a charge with effects shows the ring as with the setting off.
 
@@ -119,7 +119,7 @@ In solo play the server runs locally, so there is no network delay and both mode
 | Heavy attack available color | RGB `233, 255, 90`, alpha `229` (lime) | Any color and opacity, shown while the effects build after the heavy attack threshold |
 | READY color | RGB `120, 225, 140`, alpha `255` (green) | Any color and opacity |
 | READY pulse color | RGB `120, 225, 140`, alpha `255` (same as READY) | Any color and opacity, shown only during the READY pulse |
-| Debug output | Off | Prints charge-state transitions to chat |
+| Debug output | Off | Writes charge-state transitions to the game's log file |
 
 The ring scales with your resolution like the game's own crosshair and ignores the HUD scale option. Disabling the mod through the standard mod toggle hides the ring and stops all tracking.
 
@@ -135,7 +135,7 @@ Color changes apply immediately, without reloading. Resetting a color setting re
 
 ### Debug output
 
-With `Debug output` enabled, every windup writes its transitions to your own chat, which makes it easy to check what the mod detects for a given weapon and build:
+With `Debug output` enabled, every windup writes its transitions to the game's log file, which makes it easy to check what the mod detects for a given weapon and build without filling your chat. The log files are in `%APPDATA%\Fatshark\Darktide\console_logs`; the lines are written as DMF info messages, `[MOD][PerfectThrust][INFO] [Perfect Thrust] ...`, so they also follow DMF's own logging settings:
 
 ```text
 [Perfect Thrust] windup action_melee_start_left: first trigger 0.40s, step 0.25s, effects: <child buff> 0/3

@@ -91,7 +91,8 @@ local SEQUENCE_IS_RUNNING = 1
 local SEQUENCE_CURRENT_ELEMENT_INDEX = 2
 local SEQUENCE_ELEMENT_START_T = 3
 
---- Prefix of every debug chat line.
+--- Prefix of every debug line. Debug lines go through `mod:info`, which DMF writes to the game's
+-- console log only, unless the player changed DMF's logging settings.
 local DEBUG_PREFIX = "[Perfect Thrust] "
 
 --- The tracker module table returned to `PerfectThrust.lua`.
@@ -312,7 +313,7 @@ local function _can_proc_on_windup(buff_instance, template, action_settings, t, 
 
     if ok and not allowed then
         if mod._settings.debug_logging then
-            mod:echo(DEBUG_PREFIX .. "%s skipped: its condition is not met in this windup", tostring(child_name))
+            mod:info(DEBUG_PREFIX .. "%s skipped: its condition is not met in this windup", tostring(child_name))
         end
 
         return false
@@ -588,7 +589,7 @@ local function _debug_effects()
     return table_concat(debug_parts, ", ")
 end
 
---- Writes the end of a tracked windup to chat when debug output is enabled.
+--- Writes the end of a tracked windup to the log when debug output is enabled.
 -- param: reason why tracking ended, such as the action's finish reason
 local function _debug_finish(reason)
     if not mod._settings.debug_logging then
@@ -596,12 +597,12 @@ local function _debug_finish(reason)
     end
 
     if state.mode == MODE_HEAVY_READINESS then
-        mod:echo(DEBUG_PREFIX .. "end (%s) after %.2fs, ready=%s (regular heavy)", tostring(reason), state.time_in_action, tostring(state.ready))
+        mod:info(DEBUG_PREFIX .. "end (%s) after %.2fs, ready=%s (regular heavy)", tostring(reason), state.time_in_action, tostring(state.ready))
 
         return
     end
 
-    mod:echo(DEBUG_PREFIX .. "end (%s) after %.2fs, %d triggers, ready=%s: %s", tostring(reason), state.time_in_action, state.triggers, tostring(state.ready), _debug_effects())
+    mod:info(DEBUG_PREFIX .. "end (%s) after %.2fs, %d triggers, ready=%s: %s", tostring(reason), state.time_in_action, state.triggers, tostring(state.ready), _debug_effects())
 end
 
 -- ----------------------------------------------------------------------------
@@ -709,7 +710,7 @@ Tracker.on_windup_start = function (action, t)
     if count == 0 and not heavy_threshold then
         -- Windups without a trigger time stay silent, as they always have.
         if has_trigger_time and mod._settings.debug_logging then
-            mod:echo(DEBUG_PREFIX .. (show_heavy_threshold and "windup %s: no charge-dependent effect, no heavy attack threshold" or "windup %s: no charge-dependent effect"), tostring(action_name))
+            mod:info(DEBUG_PREFIX .. (show_heavy_threshold and "windup %s: no charge-dependent effect, no heavy attack threshold" or "windup %s: no charge-dependent effect"), tostring(action_name))
         end
 
         return
@@ -755,12 +756,12 @@ Tracker.on_windup_start = function (action, t)
         local held = hold_elapsed and string_format("%.2fs", hold_elapsed) or hold_released and "released" or "?"
 
         if count == 0 then
-            mod:echo(DEBUG_PREFIX .. "windup %s: regular heavy, threshold %.2fs (%s hold %.2fs, held %s, chain %.2fs, time scale %.2f, buffer %.2fs)", tostring(action_name), heavy_threshold, chain_input, hold_duration, held, chain_time, time_scale, buffer_time)
+            mod:info(DEBUG_PREFIX .. "windup %s: regular heavy, threshold %.2fs (%s hold %.2fs, held %s, chain %.2fs, time scale %.2f, buffer %.2fs)", tostring(action_name), heavy_threshold, chain_input, hold_duration, held, chain_time, time_scale, buffer_time)
         else
-            mod:echo(DEBUG_PREFIX .. "windup %s: first trigger %.2fs, step %.2fs, effects: %s", tostring(action_name), first_trigger_t, state.interval, _debug_effects())
+            mod:info(DEBUG_PREFIX .. "windup %s: first trigger %.2fs, step %.2fs, effects: %s", tostring(action_name), first_trigger_t, state.interval, _debug_effects())
 
             if heavy_threshold then
-                mod:echo(DEBUG_PREFIX .. "heavy threshold %.2fs (%s hold %.2fs, held %s, chain %.2fs, time scale %.2f, buffer %.2fs), expected READY %.2fs", heavy_threshold, chain_input, hold_duration, held, chain_time, time_scale, buffer_time, ready_t)
+                mod:info(DEBUG_PREFIX .. "heavy threshold %.2fs (%s hold %.2fs, held %s, chain %.2fs, time scale %.2f, buffer %.2fs), expected READY %.2fs", heavy_threshold, chain_input, hold_duration, held, chain_time, time_scale, buffer_time, ready_t)
             end
         end
     end
@@ -861,7 +862,7 @@ Tracker.refresh = function (timing_mode)
                 state.ready = true
 
                 if mod._settings.debug_logging then
-                    mod:echo(DEBUG_PREFIX .. "READY after %.2fs (regular heavy)", time_in_action)
+                    mod:info(DEBUG_PREFIX .. "READY after %.2fs (regular heavy)", time_in_action)
                 end
             elseif time_in_action > 0 then
                 fill = time_in_action / heavy_threshold
@@ -904,7 +905,7 @@ Tracker.refresh = function (timing_mode)
                 effect.confirmed = true
 
                 if mod._settings.debug_logging then
-                    mod:echo(DEBUG_PREFIX .. "%s confirmed at %d/%d after %.2fs (%d triggers)", effect.child_name, observed, effect.cap, time_in_action, triggers)
+                    mod:info(DEBUG_PREFIX .. "%s confirmed at %d/%d after %.2fs (%d triggers)", effect.child_name, observed, effect.cap, time_in_action, triggers)
                 end
             end
         end
@@ -976,7 +977,7 @@ Tracker.refresh = function (timing_mode)
             state.ready = true
 
             if mod._settings.debug_logging then
-                mod:echo(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
+                mod:info(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
             end
         elseif fill < 0 then
             fill = 0
@@ -991,7 +992,7 @@ Tracker.refresh = function (timing_mode)
         state.heavy_available = true
 
         if mod._settings.debug_logging then
-            mod:echo(DEBUG_PREFIX .. "heavy attack available after %.2fs", time_in_action)
+            mod:info(DEBUG_PREFIX .. "heavy attack available after %.2fs", time_in_action)
         end
     end
 
@@ -1002,7 +1003,7 @@ Tracker.refresh = function (timing_mode)
         state.ready = true
 
         if mod._settings.debug_logging then
-            mod:echo(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
+            mod:info(DEBUG_PREFIX .. "READY after %.2fs (%d triggers, %s): %s", time_in_action, triggers, predicted and "predicted" or "confirmed", _debug_effects())
         end
     else
         fill = heavy_available and ring_fill or time_in_action / state.ready_t

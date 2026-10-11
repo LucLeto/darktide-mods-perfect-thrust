@@ -2,7 +2,7 @@
 -- Returns a table from localization id to a table of texts by language code; DMF resolves
 -- `mod:localize(id)` against it. Holds the mod name and description, the settings group, every
 -- setting title and tooltip and the dropdown options. Texts are passed through `string.format`
--- by DMF, so a literal percent sign is written as `%%`. Debug chat lines are developer output and
+-- by DMF, so a literal percent sign is written as `%%`. Debug log lines are developer output and
 -- stay in English.
 --
 -- Loaded by DMF as `mod_localization`, as declared in `PerfectThrust.mod`.
@@ -500,17 +500,17 @@ return {
         ["zh-tw"] = "除錯輸出",
     },
     debug_logging_tooltip = {
-        en = "Prints the windup action, detected effects, stack counts and READY transitions to chat. Intended for testing.",
-        fr = "Affiche dans le chat l'action de préparation, les effets détectés, les cumuls et les passages à PRÊT. Destiné aux tests.",
-        de = "Gibt Aushol-Aktion, erkannte Effekte, Stapelzahlen und BEREIT-Wechsel im Chat aus. Zum Testen gedacht.",
-        it = "Mostra in chat l'azione di caricamento, gli effetti rilevati, i cumuli e i passaggi a PRONTO. Pensato per i test.",
-        es = "Muestra en el chat la acción de preparación, los efectos detectados, las acumulaciones y los cambios a LISTO. Pensado para pruebas.",
-        pl = "Wypisuje na czacie akcję zamachu, wykryte efekty, liczbę ładunków i przejścia do GOTOWE. Przeznaczone do testów.",
-        ["pt-br"] = "Mostra no chat a ação de preparação, os efeitos detectados, os acúmulos e as mudanças para PRONTO. Destinado a testes.",
-        ru = "Выводит в чат действие замаха, найденные эффекты, число зарядов и переходы в ГОТОВО. Предназначено для тестирования.",
-        ja = "溜めアクション、検出した効果、スタック数、READYへの遷移をチャットに出力します。テスト用です。",
-        ko = "준비 동작, 감지된 효과, 중첩 수, READY 전환을 채팅에 출력합니다. 테스트용입니다.",
-        ["zh-cn"] = "在聊天中输出蓄力动作、检测到的效果、层数以及切换到 READY 的过程。仅用于测试。",
-        ["zh-tw"] = "在聊天中輸出蓄力動作、偵測到的效果、層數以及切換到 READY 的過程。僅用於測試。",
+        en = "Writes the windup action, detected effects, stack counts and READY transitions to the game's log file (console_logs), not to chat. Intended for testing.",
+        fr = "Écrit l'action de préparation, les effets détectés, les cumuls et les passages à PRÊT dans le fichier journal du jeu (console_logs), pas dans le chat. Destiné aux tests.",
+        de = "Schreibt Aushol-Aktion, erkannte Effekte, Stapelzahlen und BEREIT-Wechsel in die Logdatei des Spiels (console_logs), nicht in den Chat. Zum Testen gedacht.",
+        it = "Scrive l'azione di caricamento, gli effetti rilevati, i cumuli e i passaggi a PRONTO nel file di log del gioco (console_logs), non in chat. Pensato per i test.",
+        es = "Escribe la acción de preparación, los efectos detectados, las acumulaciones y los cambios a LISTO en el archivo de registro del juego (console_logs), no en el chat. Pensado para pruebas.",
+        pl = "Zapisuje akcję zamachu, wykryte efekty, liczbę ładunków i przejścia do GOTOWE w pliku dziennika gry (console_logs), nie na czacie. Przeznaczone do testów.",
+        ["pt-br"] = "Grava a ação de preparação, os efeitos detectados, os acúmulos e as mudanças para PRONTO no arquivo de log do jogo (console_logs), não no chat. Destinado a testes.",
+        ru = "Записывает действие замаха, найденные эффекты, число зарядов и переходы в ГОТОВО в файл журнала игры (console_logs), а не в чат. Предназначено для тестирования.",
+        ja = "溜めアクション、検出した効果、スタック数、READYへの遷移を、チャットではなくゲームのログファイル（console_logs）に書き込みます。テスト用です。",
+        ko = "준비 동작, 감지된 효과, 중첩 수, READY 전환을 채팅이 아닌 게임 로그 파일(console_logs)에 기록합니다. 테스트용입니다.",
+        ["zh-cn"] = "将蓄力动作、检测到的效果、层数以及切换到 READY 的过程写入游戏日志文件（console_logs），而不是聊天。仅用于测试。",
+        ["zh-tw"] = "將蓄力動作、偵測到的效果、層數以及切換到 READY 的過程寫入遊戲日誌檔案（console_logs），而不是聊天。僅用於測試。",
     },
 }

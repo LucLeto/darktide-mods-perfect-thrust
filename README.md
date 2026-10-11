@@ -1,20 +1,25 @@
 # darktide-mods-perfect-thrust
 Perfect Thrust adds a small ring around the crosshair that shows when a charged heavy attack has received the full benefit of your charge-dependent effects - the **Thrust** and **Slow and Steady** blessings, the Ogryn talent **Crunch!**, and the built-in windup bonus some weapons have. These effects reach their maximum well before the weapon releases the attack on its own, and the game gives no feedback for that moment. The ring fills while the effects build and turns green once **all** of them are capped, so you can release immediately instead of holding until the forced release.
 
+Without any of these effects, the ring shows by default when a regular attack has been charged long enough to count as a heavy attack (see [Regular heavy attacks](#regular-heavy-attacks)).
+
 The mod is purely visual. It never releases attacks, changes timings, simulates input or alters buffs.
 
 ## Display
 
-The ring sits at the centre of the screen, around the crosshair, and is only drawn while you charge a heavy attack with at least one relevant effect active (colors shown are the defaults, see [Colors](#colors)):
+The ring sits at the centre of the screen, around the crosshair, and is only drawn while you charge a heavy attack with at least one relevant effect active, or, with `Show regular heavy attack readiness` on, while you charge an attack without any (colors shown are the defaults, see [Colors](#colors)):
 
 | State | Ring |
 | --- | --- |
-| Idle, light attacks, no relevant effect | Hidden |
+| Idle | Hidden |
+| No relevant effect, `Show regular heavy attack readiness` off | Hidden |
 | Charging, effects building | Amber segments fill clockwise from the top |
 | READY - every tracked effect is at its maximum | Fully green, with a brief pulse |
+| Charging without relevant effects | Amber segments fill until the attack counts as a heavy attack |
+| READY - the attack counts as a heavy attack | Fully green, with a brief pulse |
 | Released, cancelled, weapon switched, downed | Hidden immediately |
 
-The ring appears once the first stack of an effect has arrived, which is shortly after the attack has become a heavy attack, so light attacks never make it flicker. After READY it stays full for as long as you keep charging; holding longer gains nothing from these effects, but you can of course keep charging for other reasons.
+With relevant effects, the ring appears once the first stack of an effect has arrived, which is shortly after the attack has become a heavy attack, so light attacks never make it flicker. After READY it stays full for as long as you keep charging; holding longer gains nothing from these effects, but you can of course keep charging for other reasons.
 
 With `Display` set to `READY only` the ring stays hidden while charging and only appears at READY.
 
@@ -53,13 +58,30 @@ The mod picks every buff whose template procs on `on_windup_trigger` and adds st
 
 Weapon templates with a built-in windup bonus: `crowbar_p1_m1`, `thunderhammer_2h_p1_m1/m2`, `ogryn_hammer_2h_p1_m1`, `powersword_p3_m1`, `powersword_2h_p1_m1/m2`. Charging is read from `ActionWindup` and `ActionBlockWindup`.
 
+When a charge starts, each buff's own proc conditions are checked the way `ProcBuff` does for the `on_windup_trigger` event - `conditional_proc_func`, then `specific_check_proc_funcs.on_windup_trigger` or else `check_proc_func`, with the windup's `action_settings` as the event parameter. Of today's effects, only two have a condition beyond the weapon being wielded: the Relic Blades' bonus needs a sprint windup (`is_sprint_windup`) while sprinting, and the Mechanicus Power Sword's bonus needs the weapon special to be active.
+
 </details>
 
-An effect only counts once it has actually started stacking during the current charge. Conditional effects whose condition is not met (a sprint-only bonus on a standing heavy, a special-only bonus with the special off) therefore never hold back READY. Stacks left over from the previous attack are ignored until the game has cleared them.
+Conditional effects are checked when you start charging: an effect whose condition is not met at that moment - the Relic Blades' sprint-only bonus on a heavy attack charged without sprinting, the Mechanicus Power Sword's bonus with the special off - cannot stack during this charge and is left out. If no other effect is active, the charge shows the [regular heavy attack](#regular-heavy-attacks) ring instead. An effect that is kept only counts once it has actually started stacking during the current charge. Stacks left over from the previous attack are ignored until the game has cleared them.
 
 ### How the stacks build
 
 The first stack is granted when the heavy attack becomes available, then one more each interval. According to kuli's guides the interval is 0.25 s on most weapons and 0.2 s on Pickaxes, Thunder Hammers and the Chainaxe Mk IV; attack speed buffs do not change it. A 3-stack effect is therefore capped two intervals after the heavy threshold, and a 4-stack effect such as Crunch! three intervals after it. With several effects, READY waits for the slowest one - with Thrust and Crunch! on an Ogryn, READY follows Crunch!.
+
+## Regular heavy attacks
+
+When none of the effects above is active, the ring falls back to the regular heavy attack: it fills while you charge and turns green at the earliest moment you can let go and still get a heavy attack. This also covers flat heavy attack bonuses that do not depend on how long you charge, such as heavy attack damage talents, and the heavy bashes and stabs of ranged weapons. Holding longer than READY adds no damage. Turn `Show regular heavy attack readiness` off to show the ring only for the effects above, as in earlier versions.
+
+The threshold is read from the game for each charge, never hard-coded. The game decides light or heavy when you let go: once the weapon's heavy attack input has been held for its hold time (0.25 to 0.45 s depending on the weapon), a release is queued as a heavy attack. The charging action then starts the heavy swing at its own `chain_time`, which differs between weapons, marks and combo steps and is shortened by attack speed. A queued heavy waits for that moment for up to its buffer time (0.5 s), so:
+
+* READY appears at the heavy attack input's hold time. On most weapons this is before the heavy swing can start, so the ring can turn green shortly before the swing begins after you let go - the attack is the same as if you had held on.
+* Only if the action's `chain_time` (divided by the attack speed time scale, like the game does) comes more than the buffer time after the hold time, READY waits until releasing is within the buffer time of it. No current weapon needs this.
+
+Charges with no resolvable heavy attack threshold show no ring. The fallback runs entirely on your client's own windup timer, as no server stacks are involved, so `READY timing` does not apply to it.
+
+The effects above always take priority. The choice is made when you start charging: if any effect can stack during this charge, the ring follows that effect, even while its first stack has not arrived yet. Effects whose condition is not met when you start charging do not count, so a Relic Blade heavy attack charged without sprinting, or a Mechanicus Power Sword heavy attack with the special off, shows the regular heavy attack ring.
+
+In `Progress + READY` mode the ring starts filling as soon as you press attack, so a light attack briefly shows a partially filled ring until it is released. Use `READY only` if you prefer the ring to appear only at READY.
 
 ## READY timing
 
@@ -78,6 +100,7 @@ In solo play the server runs locally, so there is no network delay and both mode
 | --- | --- | --- |
 | Display | Progress + READY | Progress + READY / READY only |
 | READY timing | Predicted | Predicted / Server-confirmed |
+| Show regular heavy attack readiness | On | Shows the ring for heavy attacks without charge-dependent effects |
 | Ring size | 32 | 12-150 px radius at 1080p |
 | Ring thickness | 3 | 1-10 px per segment at 1080p |
 | Horizontal offset | 0 | -960 to 960 px from the screen centre |
@@ -112,13 +135,23 @@ With `Debug output` enabled, every windup writes its transitions to your own cha
 [Perfect Thrust] end (released) after 1.40s, 4 triggers, ready=true: <child buff> 3/3
 ```
 
-A windup without any relevant effect logs a single `no charge-dependent effect` line. In the example above, the predicted READY lands before the third stack has arrived from the server - that gap is the network delay Predicted mode removes.
+A windup without any relevant effect logs a single `no charge-dependent effect` line, or, with `Show regular heavy attack readiness` on, tracks the regular heavy attack instead:
+
+```text
+[Perfect Thrust] windup action_melee_start_left: regular heavy, threshold 0.35s (heavy_attack hold 0.35s, chain 0.40s, time scale 1.00, buffer 0.50s)
+[Perfect Thrust] READY after 0.35s (regular heavy)
+[Perfect Thrust] end (new_interrupting_action) after 0.55s, ready=true (regular heavy)
+```
+
+If no heavy attack threshold can be resolved for a windup, it logs `no charge-dependent effect, no heavy attack threshold`. An effect left out because its condition is not met logs `<child buff> skipped: its condition is not met in this windup` before the windup line. In the first example above, the predicted READY lands before the third stack has arrived from the server - that gap is the network delay Predicted mode removes.
 
 ## Limitations
 
 * **Predicted mode assumes every trigger after the first stack grants another one.** That holds for all effects listed above while their condition stays true. If a conditional effect loses its condition mid-charge - for example you stop sprinting during a sprint heavy - Predicted mode can show READY before that effect is actually capped. Use `Server-confirmed` if this matters to you.
+* **Conditions are checked once, when you start charging.** If a conditional effect loses its condition before its first stack - for example you stop sprinting right after starting a Relic Blade sprint heavy - the ring stays hidden for that charge instead of falling back to the regular heavy attack ring.
 * **Very high ping.** Effects are counted once their first stack has arrived. Above roughly 250-500 ms, a second effect's first stack may not have arrived yet when another effect is capped, which can make a predicted READY early.
-* **The ring appears about one ping after the heavy threshold**, in both modes, because an effect is only shown once its first stack has arrived from the server. Its fill is already correct when it appears.
+* **With charge-dependent effects, the ring appears about one ping after the heavy threshold**, in both modes, because an effect is only shown once its first stack has arrived from the server. Its fill is already correct when it appears.
+* **Regular heavy READY can be slightly late in attack chains.** The heavy attack input's hold time is counted from the start of the charge, although the game starts counting it when you press attack, which can be earlier when you press during the previous swing. Conditions the game checks for a few heavy attacks themselves, such as the weapon special still being active or not aiming with the shield shotpistol, are not evaluated.
 * **The ring stays at the screen centre plus your offset.** It does not follow the crosshair's small recoil and sway drift, which melee weapons barely have.
 * **"Fully charged" effects are not tracked.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks. READY does not mean the attack counts as fully charged for them.
 * **Only effects that stack from the windup trigger are detected.** An effect that builds while charging in some other way, or has no child buff with a stack limit, is not recognised. At most four effects are tracked per charge.

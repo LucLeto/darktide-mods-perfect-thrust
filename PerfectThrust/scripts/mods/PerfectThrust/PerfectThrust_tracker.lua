@@ -3,13 +3,19 @@
 -- starts, the active buffs are scanned once for effects that gain stacks from the game's
 -- `on_windup_trigger` proc event (blessings such as Thrust and Slow and Steady, the Ogryn talent
 -- Crunch!, the built-in windup bonus of some weapons), and their stack caps are resolved from
--- the buff templates rather than from a per-weapon list.
+-- the buff templates rather than from a per-weapon list. Each effect's own proc conditions are
+-- checked as well, so a conditional bonus is left out of windups in which it cannot stack.
 --
 -- Every stack is granted by the server and reaches a multiplayer client one round trip later.
 -- The windup action itself runs on the client too and advances the same trigger timer the
 -- server uses, so this module reads that timer (`_proc_trigger_time`) to predict the stack count
 -- without the network delay, while the replicated stacks decide which effects count at all. The
 -- `confirmed` timing mode uses only the replicated stacks.
+--
+-- A windup without any such effect can fall back to regular heavy attack readiness: the ring then
+-- fills up to the earliest moment a release still gives the heavy attack, resolved from the
+-- weapon's heavy attack input and the action's own heavy attack chain time. The tracking mode is
+-- chosen once when the windup starts, so the effects always take priority over the fallback.
 --
 -- Loaded by `PerfectThrust.lua` through `mod:io_dofile` and stored as `mod._tracker`. The windup
 -- hooks there feed `on_windup_start`, `on_windup_update` and `on_windup_finish`, and the HUD
@@ -57,6 +63,21 @@ local NEARLY_FULL = 0.999
 --- `timing_mode` setting value that takes READY from the replicated stacks only.
 local TIMING_MODE_CONFIRMED = "confirmed"
 
+--- Tracking modes of a windup: its charge-dependent effects, or the regular heavy attack
+-- threshold when no such effect is active.
+local MODE_EFFECTS = "effects"
+local MODE_HEAVY_READINESS = "heavy_readiness"
+
+--- Action inputs that chain a windup into its heavy attack, in lookup order: the melee heavy
+-- attack, the melee heavy attack while the weapon special is active, and the heavy bash or stab of
+-- a ranged weapon's special attack. Each one names both the entry in the windup's
+-- `allowed_chain_actions` and the input in the weapon template's `action_inputs`.
+local HEAVY_CHAIN_INPUTS = {
+    "heavy_attack",
+    "heavy_attack_special",
+    "special_action_heavy"
+}
+
 --- Prefix of every debug chat line.
 local DEBUG_PREFIX = "[Perfect Thrust] "
 
@@ -87,6 +108,10 @@ local effects = {}
 --- Scratch list of the per-effect parts of a debug line.
 local debug_parts = {}
 
+--- Scratch proc event parameters for checking a buff's windup trigger conditions; like the
+-- parameters of the game's own `on_windup_trigger` event, only `action_settings` is set.
+local windup_trigger_params = {}
+
 for i = 1, MAX_EFFECTS do
     effects[i] = {
         child_name = nil,
@@ -102,7 +127,9 @@ for i = 1, MAX_EFFECTS do
 end
 
 --- The windup being tracked.
--- `active` is set only while a local windup with at least one charge-dependent effect runs.
+-- `active` is set only while a local windup with at least one charge-dependent effect, or with a
+-- resolved regular heavy attack threshold, runs; `mode` is `MODE_EFFECTS` or `MODE_HEAVY_READINESS`
+-- accordingly, and `heavy_threshold` the time in action at which the heavy attack can be released.
 -- `action`, `action_name` and `start_t` identify that windup and are checked against the
 -- weapon_action component every frame. `first_trigger_t` is the time in action of the first
 -- trigger, `interval` the time between triggers, `triggers` how many the game has fired so far
@@ -110,6 +137,8 @@ end
 -- values returned by `Tracker.refresh`; `ready` stays set for the rest of the windup.
 local state = {
     active = false,
+    mode = nil,
+    heavy_threshold = 0,
     action = nil,
     unit = nil,
     action_name = nil,
@@ -215,6 +244,60 @@ local function _has_effect(count, child_name)
     return false
 end
 
+--- Returns whether a buff's own conditions let it proc on the trigger of the windup that starts.
+-- Mirrors `ProcBuff.update_proc_events`: the template's `conditional_proc_func`, then its
+-- `specific_check_proc_funcs` entry for `on_windup_trigger` or else its `check_proc_func`, called
+-- with the buff instance's template data and context and the windup's action settings as event
+-- parameters. This leaves out conditional weapon mechanics in windups where they cannot stack,
+-- such as the Relic Blades' sprint-only bonus on a standing heavy attack or the Mechanicus Power
+-- Sword's bonus with its special off. Proc chance and cooldown are not checked. A check that
+-- cannot run keeps the effect, as before.
+-- tab: buff_instance active buff
+-- tab: template its buff template
+-- ?tab: action_settings settings of the windup action
+-- number: t fixed-step time the windup started at
+-- string: child_name child buff template name, for debug output
+-- treturn: bool
+local function _can_proc_on_windup(buff_instance, template, action_settings, t, child_name)
+    local conditional_proc_func = template.conditional_proc_func
+    local specific_check_proc_funcs = template.specific_check_proc_funcs
+    local check_proc_func = specific_check_proc_funcs and specific_check_proc_funcs[ON_WINDUP_TRIGGER] or template.check_proc_func
+
+    if not conditional_proc_func and not check_proc_func then
+        return true
+    end
+
+    local template_data = buff_instance._template_data
+    local template_context = buff_instance._template_context
+
+    if type(template_data) ~= "table" or type(template_context) ~= "table" then
+        return true
+    end
+
+    local ok, allowed = true, true
+
+    if conditional_proc_func then
+        ok, allowed = pcall(conditional_proc_func, template_data, template_context, t)
+    end
+
+    if check_proc_func and not (ok and not allowed) then
+        windup_trigger_params.action_settings = action_settings
+        ok, allowed = pcall(check_proc_func, windup_trigger_params, template_data, template_context, t)
+
+        table_clear(windup_trigger_params)
+    end
+
+    if ok and not allowed then
+        if mod._settings.debug_logging then
+            mod:echo(DEBUG_PREFIX .. "%s skipped: its condition is not met in this windup", tostring(child_name))
+        end
+
+        return false
+    end
+
+    return true
+end
+
 --- Returns an effect's replicated stack count without the parent's baseline stacks.
 -- tab: buff_extension local player's buff extension
 -- tab: effect entry of `effects`
@@ -228,6 +311,8 @@ end
 --- Stops tracking and clears the windup state.
 local function _reset_state()
     state.active = false
+    state.mode = nil
+    state.heavy_threshold = 0
     state.action = nil
     state.unit = nil
     state.action_name = nil
@@ -238,6 +323,135 @@ local function _reset_state()
     state.time_in_action = 0
     state.fill = 0
     state.ready = false
+end
+
+-- ----------------------------------------------------------------------------
+-- Regular heavy attack threshold
+-- ----------------------------------------------------------------------------
+
+--- Returns the chain time of one heavy attack transition, or nil when it cannot be resolved.
+-- An input-dependent `chain_time` table is resolved like the windup action's own
+-- `_latest_chain_time`, by the input that started the windup or its `default`. A transition gated
+-- by a running action state is skipped, because that state is not known here.
+-- tab: chain_action entry of `allowed_chain_actions`, or one of its alternatives
+-- ?string: used_input input that started the windup
+-- treturn: ?number chain time in seconds of unscaled action time
+local function _transition_chain_time(chain_action, used_input)
+    if type(chain_action) ~= "table" or chain_action.running_action_state_requirement then
+        return nil
+    end
+
+    local chain_time = chain_action.chain_time
+
+    if type(chain_time) == "table" then
+        chain_time = chain_time[used_input] or chain_time.default
+    end
+
+    if type(chain_time) ~= "number" or chain_time < 0 then
+        return nil
+    end
+
+    return chain_time
+end
+
+--- Works out the earliest time in action at which releasing a windup still gives its heavy attack.
+-- Called once when a windup without charge-dependent effects starts. The input layer decides
+-- light or heavy on release: once the weapon's heavy attack input has been held for its first
+-- step's `duration`, a release queues the heavy attack, and the queued input waits up to its
+-- `buffer_time` for the windup to allow the heavy attack at its chain time. So the threshold is
+-- that hold duration, unless the chain time comes more than one buffer time later, which a release
+-- must then wait for. The hold timer starts with the press, never after the windup, so counting
+-- it from the windup start is never early. A release made in reaction to READY lands at least one
+-- fixed step later, which keeps it past the light attack's inclusive time window and the queued
+-- input alive at the chain time, so no extra margin is needed.
+--
+-- Takes the first heavy attack transition of `HEAVY_CHAIN_INPUTS` in the windup's
+-- `allowed_chain_actions`; of several alternatives the latest chain time is used, since the
+-- conditions that pick one are not known here. Like the action handler's chain check, the chain
+-- time is divided by the action's time scale. A `chain_until` only opens an earlier window and is
+-- ignored. Nothing is returned when the hold duration is unknown or no positive, finite threshold
+-- can be resolved.
+-- tab: action windup action instance
+-- ?tab: action_settings settings of the windup action
+-- tab: weapon_action_component the local player's weapon_action component
+-- treturn: ?number threshold in seconds of time in action
+-- treturn: ?string action input of the heavy attack transition
+-- treturn: ?number hold duration of the heavy attack input
+-- treturn: ?number unscaled chain time
+-- treturn: ?number action time scale
+-- treturn: ?number buffer time of the heavy attack input, 0 when it has none
+local function _resolve_heavy_threshold(action, action_settings, weapon_action_component)
+    local allowed_chain_actions = action_settings and action_settings.allowed_chain_actions
+
+    if type(allowed_chain_actions) ~= "table" then
+        return nil
+    end
+
+    local chain_input, chain_action
+
+    for i = 1, #HEAVY_CHAIN_INPUTS do
+        local input = HEAVY_CHAIN_INPUTS[i]
+        local candidate = allowed_chain_actions[input]
+
+        if type(candidate) == "table" then
+            chain_input = input
+            chain_action = candidate
+
+            break
+        end
+    end
+
+    if not chain_action then
+        return nil
+    end
+
+    local used_input = action._used_input
+    local alternatives = #chain_action
+    local chain_time
+
+    if alternatives == 0 then
+        chain_time = _transition_chain_time(chain_action, used_input)
+    else
+        for i = 1, alternatives do
+            local alternative_chain_time = _transition_chain_time(chain_action[i], used_input)
+
+            if alternative_chain_time and (not chain_time or alternative_chain_time > chain_time) then
+                chain_time = alternative_chain_time
+            end
+        end
+    end
+
+    local time_scale = weapon_action_component.time_scale
+    local weapon_template = action._weapon_template
+    local action_inputs = weapon_template and weapon_template.action_inputs
+    local action_input = action_inputs and action_inputs[chain_input]
+    local input_sequence = action_input and action_input.input_sequence
+    local hold_element = input_sequence and input_sequence[1]
+    local hold_duration = hold_element and hold_element.duration
+
+    -- `not (x >= 0)` also rejects NaN, which fails every comparison.
+    if not chain_time or type(time_scale) ~= "number" or time_scale <= 0 or type(hold_duration) ~= "number" or not (hold_duration >= 0) then
+        return nil
+    end
+
+    local buffer_time = action_input.buffer_time
+
+    if type(buffer_time) ~= "number" or not (buffer_time >= 0) then
+        buffer_time = 0
+    end
+
+    -- Windup kinds never use the action handler's inverted time scale.
+    local threshold = chain_time / time_scale - buffer_time
+
+    if threshold < hold_duration then
+        threshold = hold_duration
+    end
+
+    if not (threshold > 0 and threshold < math_huge) then
+        return nil
+    end
+
+    return threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time
 end
 
 -- ----------------------------------------------------------------------------
@@ -265,6 +479,12 @@ local function _debug_finish(reason)
         return
     end
 
+    if state.mode == MODE_HEAVY_READINESS then
+        mod:echo(DEBUG_PREFIX .. "end (%s) after %.2fs, ready=%s (regular heavy)", tostring(reason), state.time_in_action, tostring(state.ready))
+
+        return
+    end
+
     mod:echo(DEBUG_PREFIX .. "end (%s) after %.2fs, %d triggers, ready=%s: %s", tostring(reason), state.time_in_action, state.triggers, tostring(state.ready), _debug_effects())
 end
 
@@ -273,10 +493,13 @@ end
 -- ----------------------------------------------------------------------------
 
 --- Starts tracking a windup of the local player when a charge-dependent effect is active.
--- Called after `ActionWindup.start` or `ActionBlockWindup.start`. Ignores bots and other players,
--- and windups without a trigger time. Scans the active buffs once, keeps the effects that belong
--- to the wielded weapon or to no weapon, and stays idle when none is found. An instance override
--- of `max_stacks` on a parent buff caps its children, as in `WeaponTraitParentProcBuff`.
+-- Called after `ActionWindup.start` or `ActionBlockWindup.start`. Ignores bots and other players.
+-- Scans the active buffs once and keeps the effects that belong to the wielded weapon or to no
+-- weapon and whose own conditions let them stack in this windup; a windup without a trigger time
+-- can have none. An instance override of `max_stacks` on a parent buff caps its children, as in
+-- `WeaponTraitParentProcBuff`. When none is found and the
+-- `show_regular_heavy_readiness` setting is on, it tracks the regular heavy attack threshold
+-- instead; without a resolvable threshold it stays idle.
 -- tab: action windup action instance
 -- number: t fixed-step time the action started at
 Tracker.on_windup_start = function (action, t)
@@ -290,8 +513,12 @@ Tracker.on_windup_start = function (action, t)
     end
 
     local first_trigger_t = action._proc_trigger_time
+    -- Every charge-dependent effect stacks from the windup trigger. A windup without a trigger time
+    -- (the game ignores alternative chain lists when computing it) can still have a heavy attack.
+    local has_trigger_time = first_trigger_t and first_trigger_t ~= math_huge
+    local show_regular_heavy_readiness = mod._settings.show_regular_heavy_readiness
 
-    if not first_trigger_t or first_trigger_t == math_huge then
+    if not has_trigger_time and not show_regular_heavy_readiness then
         return
     end
 
@@ -304,10 +531,12 @@ Tracker.on_windup_start = function (action, t)
         return
     end
 
+    local action_settings = action._action_settings
     local wielded_slot = inventory_component.wielded_slot
     local count = 0
+    local buff_count = has_trigger_time and #buffs or 0
 
-    for i = 1, #buffs do
+    for i = 1, buff_count do
         local buff_instance = buffs[i]
         local template = buff_instance:template()
         local descriptor = template and _descriptor(template)
@@ -316,7 +545,7 @@ Tracker.on_windup_start = function (action, t)
             local item_slot_name = buff_instance:item_slot_name()
             local child_name = descriptor.child_name
 
-            if (item_slot_name == nil or item_slot_name == wielded_slot) and not _has_effect(count, child_name) then
+            if (item_slot_name == nil or item_slot_name == wielded_slot) and not _has_effect(count, child_name) and _can_proc_on_windup(buff_instance, template, action_settings, t, child_name) then
                 local cap = descriptor.cap
 
                 if descriptor.uses_parent_override then
@@ -351,23 +580,32 @@ Tracker.on_windup_start = function (action, t)
         end
     end
 
-    local action_settings = action._action_settings
     local action_name = weapon_action_component.current_action_name
+    local heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time
 
     if count == 0 then
-        if mod._settings.debug_logging then
-            mod:echo(DEBUG_PREFIX .. "windup %s: no charge-dependent effect", tostring(action_name))
+        if show_regular_heavy_readiness then
+            heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time = _resolve_heavy_threshold(action, action_settings, weapon_action_component)
         end
 
-        return
+        if not heavy_threshold then
+            -- Windups without a trigger time stay silent, as they always have.
+            if has_trigger_time and mod._settings.debug_logging then
+                mod:echo(DEBUG_PREFIX .. (show_regular_heavy_readiness and "windup %s: no charge-dependent effect, no heavy attack threshold" or "windup %s: no charge-dependent effect"), tostring(action_name))
+            end
+
+            return
+        end
     end
 
     state.active = true
+    state.mode = heavy_threshold and MODE_HEAVY_READINESS or MODE_EFFECTS
+    state.heavy_threshold = heavy_threshold or 0
     state.action = action
     state.unit = action._player_unit
     state.action_name = action_name
     state.start_t = t
-    state.first_trigger_t = first_trigger_t
+    state.first_trigger_t = has_trigger_time and first_trigger_t or math_huge
     state.interval = action_settings and action_settings.proc_time_interval or PROC_INTERVAL_DEFAULT
     state.triggers = 0
     state.time_in_action = 0
@@ -378,7 +616,11 @@ Tracker.on_windup_start = function (action, t)
     state.ready = false
 
     if mod._settings.debug_logging then
-        mod:echo(DEBUG_PREFIX .. "windup %s: first trigger %.2fs, step %.2fs, effects: %s", tostring(action_name), first_trigger_t, state.interval, _debug_effects())
+        if heavy_threshold then
+            mod:echo(DEBUG_PREFIX .. "windup %s: regular heavy, threshold %.2fs (%s hold %.2fs, chain %.2fs, time scale %.2f, buffer %.2fs)", tostring(action_name), heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time)
+        else
+            mod:echo(DEBUG_PREFIX .. "windup %s: first trigger %.2fs, step %.2fs, effects: %s", tostring(action_name), first_trigger_t, state.interval, _debug_effects())
+        end
     end
 end
 
@@ -435,10 +677,14 @@ end
 -- `k / needed` exactly at trigger `k`. In `confirmed` mode, and for effects that are not
 -- predictable, the fraction is the replicated stack count over the cap. Once READY, the ring
 -- stays full for the rest of the windup.
+--
+-- A windup tracked for regular heavy attack readiness is visible from its start and fills with
+-- the fixed-step time in action up to the heavy threshold, where it is READY. This runs entirely
+-- on the local windup timing, so `timing_mode` does not apply to it.
 -- string: timing_mode `predicted` or `confirmed`
 -- treturn: bool whether the ring should be visible
 -- treturn: number fill fraction from 0 to 1
--- treturn: bool whether every confirmed effect is at its maximum
+-- treturn: bool whether every confirmed effect is at its maximum, or the heavy threshold is reached
 Tracker.refresh = function (timing_mode)
     if not state.active then
         return false, 0, false
@@ -452,6 +698,31 @@ Tracker.refresh = function (timing_mode)
         _reset_state()
 
         return false, 0, false
+    end
+
+    if state.mode == MODE_HEAVY_READINESS then
+        local fill = 1
+
+        if not state.ready then
+            local time_in_action = state.time_in_action
+            local heavy_threshold = state.heavy_threshold
+
+            if time_in_action >= heavy_threshold then
+                state.ready = true
+
+                if mod._settings.debug_logging then
+                    mod:echo(DEBUG_PREFIX .. "READY after %.2fs (regular heavy)", time_in_action)
+                end
+            elseif time_in_action > 0 then
+                fill = time_in_action / heavy_threshold
+            else
+                fill = 0
+            end
+        end
+
+        state.fill = fill
+
+        return true, fill, state.ready
     end
 
     local buff_extension = state.buff_extension
@@ -537,7 +808,8 @@ end
 -- Public API
 -- ----------------------------------------------------------------------------
 
---- Returns whether a windup with at least one charge-dependent effect is being tracked.
+--- Returns whether a windup is being tracked, for its charge-dependent effects or for regular
+-- heavy attack readiness.
 -- treturn: bool
 Tracker.is_charging_heavy_attack = function ()
     return state.active
@@ -545,14 +817,15 @@ end
 
 --- Returns the effects tracked during the current windup.
 -- The table is the preallocated pool; only its first `count` entries are in use, and it must not
--- be modified.
+-- be modified. `count` is 0 while regular heavy attack readiness is tracked.
 -- treturn: tab effect pool (see `effects`)
 -- treturn: int count of entries in use
 Tracker.get_relevant_charge_buffs = function ()
     return effects, state.effect_count
 end
 
---- Returns whether every confirmed effect of the current windup has reached its maximum.
+--- Returns whether every confirmed effect of the current windup has reached its maximum, or,
+-- while regular heavy attack readiness is tracked, whether the heavy threshold has been reached.
 -- treturn: bool
 Tracker.are_charge_buffs_maxed = function ()
     return state.ready

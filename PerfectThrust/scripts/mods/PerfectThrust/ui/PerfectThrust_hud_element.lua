@@ -1,7 +1,8 @@
 --- The HUD element that draws Perfect Thrust's charge ring around the crosshair.
 -- A ring of square segments centred on the screen, like the game's crosshair. While a tracked
 -- windup runs, it asks the tracker each frame what to show: segments light up clockwise from the
--- top as the charge-dependent effects build, the whole ring switches to the READY colour at READY
+-- top as the charge-dependent effects build (or, without such effects, as a regular heavy attack
+-- charges towards its threshold), the whole ring switches to the READY colour at READY
 -- with an optional short pulse, and it hides as soon as the tracker stops. All four colours come
 -- from the settings (amber charging and green READY by default). Colours and geometry are only
 -- rewritten when the lit count, the READY state, the pulse colour phase or the settings change.

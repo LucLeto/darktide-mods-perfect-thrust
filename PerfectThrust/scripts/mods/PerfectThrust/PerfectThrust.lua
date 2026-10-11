@@ -23,6 +23,7 @@ mod.version = mod.get_metadata and mod:get_metadata("version") or "unknown"
 local settings = {
     display_mode = "progress",
     timing_mode = "predicted",
+    show_regular_heavy_readiness = true,
     ring_radius = 32,
     ring_thickness = 3,
     offset_x = 0,
@@ -39,6 +40,7 @@ local settings = {
 local SETTING_IDS = {
     "display_mode",
     "timing_mode",
+    "show_regular_heavy_readiness",
     "ring_radius",
     "ring_thickness",
     "offset_x",

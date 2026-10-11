@@ -14,7 +14,8 @@
 --
 -- With the `show_heavy_threshold` setting on, the heavy attack threshold is tracked too: the
 -- earliest moment a release still gives the heavy attack, resolved from the weapon's heavy attack
--- input and the action's own heavy attack chain time. A windup without any such effect then fills
+-- input, the hold timer the game's input parser started at the press (read-only, with a fallback
+-- to the windup start) and the action's own heavy attack chain time. A windup without any such effect then fills
 -- up to that threshold and is READY there. A windup with effects shows one ring from its start
 -- over the expected charge: charging, then heavy attack available once the threshold is reached,
 -- then READY once the effects are at their maximum. The tracking mode is chosen once when the
@@ -81,6 +82,15 @@ local HEAVY_CHAIN_INPUTS = {
     "special_action_heavy"
 }
 
+--- Action input parser of the weapon actions in `PlayerUnitActionInputExtension._action_input_parsers`.
+local WEAPON_ACTION_PARSER = "weapon_action"
+
+--- Indices of the running flag, current element and element start time tables in a frame of
+-- `ActionInputParser._sequences`, as the parser defines them.
+local SEQUENCE_IS_RUNNING = 1
+local SEQUENCE_CURRENT_ELEMENT_INDEX = 2
+local SEQUENCE_ELEMENT_START_T = 3
+
 --- Prefix of every debug chat line.
 local DEBUG_PREFIX = "[Perfect Thrust] "
 
@@ -134,8 +144,9 @@ end
 --- The windup being tracked.
 -- `active` is set only while a local windup with at least one charge-dependent effect, or with a
 -- resolved regular heavy attack threshold, runs; `mode` is `MODE_EFFECTS` or `MODE_HEAVY_READINESS`
--- accordingly, and `heavy_threshold` the time in action at which the heavy attack can be released,
--- or 0 when it is not tracked. With effects and a heavy threshold, `ready_t` is the expected time
+-- accordingly. `tracks_heavy` is set when the heavy attack threshold is tracked, and
+-- `heavy_threshold` is then the time in action from which it can be released, possibly 0 when the
+-- hold was already done before the windup started. With effects and a heavy threshold, `ready_t` is the expected time
 -- of READY, `heavy_fraction` the share of the ring filled at the heavy threshold and
 -- `heavy_available` whether that threshold has been reached; it stays set for the rest of the windup.
 -- `action`, `action_name` and `start_t` identify that windup and are checked against the
@@ -146,6 +157,7 @@ end
 local state = {
     active = false,
     mode = nil,
+    tracks_heavy = false,
     heavy_threshold = 0,
     ready_t = 0,
     heavy_fraction = 0,
@@ -323,6 +335,7 @@ end
 local function _reset_state()
     state.active = false
     state.mode = nil
+    state.tracks_heavy = false
     state.heavy_threshold = 0
     state.ready_t = 0
     state.heavy_fraction = 0
@@ -368,33 +381,116 @@ local function _transition_chain_time(chain_action, used_input)
     return chain_time
 end
 
+--- Returns how much of the heavy attack input's hold was already done when the windup started.
+-- The game's input parser starts the hold timer of the heavy attack input when the attack press is
+-- registered. In an attack chain that press often comes while the previous attack still runs, so
+-- the hold is partly or fully done before the windup starts. This reads the timer from the parser's
+-- latest frame: the heavy attack sequence must be running, either still on its first (hold)
+-- element, whose start time is the press, or past it, when the hold is complete. A sequence that
+-- is no longer running was already decided by a release, typically a quick tap during the previous
+-- attack that turns this windup into a light attack. These are internals of `ActionInputParser`;
+-- when the hold cannot be read, the caller counts it from the windup start, which is never early.
+-- tab: action windup action instance
+-- string: chain_input action input of the heavy attack transition
+-- number: t fixed-step time the windup started at
+-- number: hold_duration hold duration of the heavy attack input's first element
+-- treturn: ?number seconds of the hold done at the windup start, from 0 to `hold_duration`
+-- treturn: ?bool true when the parser was read but the heavy attack input had already been released
+local function _heavy_hold_elapsed(action, chain_input, t, hold_duration)
+    local script_unit = ScriptUnit
+    local has_extension = type(script_unit) == "table" and script_unit.has_extension
+    local unit = action._player_unit
+
+    if not has_extension or not unit then
+        return nil
+    end
+
+    local ok, action_input_extension = pcall(has_extension, unit, "action_input_system")
+    local parsers = ok and type(action_input_extension) == "table" and action_input_extension._action_input_parsers
+    local parser = type(parsers) == "table" and parsers[WEAPON_ACTION_PARSER]
+
+    if type(parser) ~= "table" then
+        return nil
+    end
+
+    local ring_buffer = parser._sequences
+    local sequences = type(ring_buffer) == "table" and ring_buffer[parser._ring_buffer_index]
+    local network_lookups = parser._ACTION_INPUT_NETWORK_LOOKUP
+    local action_component = parser._action_component
+    local network_lookup = type(network_lookups) == "table" and action_component and network_lookups[action_component.template_name]
+    local sequence_i = type(network_lookup) == "table" and network_lookup[chain_input]
+
+    if type(sequences) ~= "table" or type(sequence_i) ~= "number" then
+        return nil
+    end
+
+    local is_running = sequences[SEQUENCE_IS_RUNNING]
+    local element_indices = sequences[SEQUENCE_CURRENT_ELEMENT_INDEX]
+    local element_start_ts = sequences[SEQUENCE_ELEMENT_START_T]
+
+    if type(is_running) ~= "table" or type(element_indices) ~= "table" or type(element_start_ts) ~= "table" then
+        return nil
+    end
+
+    local running = is_running[sequence_i]
+
+    if running == false then
+        return nil, true
+    elseif running ~= true then
+        return nil
+    end
+
+    local element_index = element_indices[sequence_i]
+    local start_t = element_start_ts[sequence_i]
+
+    -- An unset start time is -math.huge; a start after the windup cannot belong to its press.
+    if type(element_index) ~= "number" or type(start_t) ~= "number" or not (start_t > -math_huge and start_t <= t) then
+        return nil
+    end
+
+    if element_index > 1 then
+        return hold_duration
+    elseif element_index == 1 then
+        local elapsed = t - start_t
+
+        return elapsed < hold_duration and elapsed or hold_duration
+    end
+
+    return nil
+end
+
 --- Works out the earliest time in action at which releasing a windup still gives its heavy attack.
--- Called once when a windup without charge-dependent effects starts. The input layer decides
--- light or heavy on release: once the weapon's heavy attack input has been held for its first
--- step's `duration`, a release queues the heavy attack, and the queued input waits up to its
--- `buffer_time` for the windup to allow the heavy attack at its chain time. So the threshold is
--- that hold duration, unless the chain time comes more than one buffer time later, which a release
--- must then wait for. The hold timer starts with the press, never after the windup, so counting
--- it from the windup start is never early. A release made in reaction to READY lands at least one
--- fixed step later, which keeps it past the light attack's inclusive time window and the queued
--- input alive at the chain time, so no extra margin is needed.
+-- Called once when a windup starts. The input layer decides light or heavy on release: once the
+-- weapon's heavy attack input has been held for its first step's `duration`, a release queues the
+-- heavy attack, and the queued input waits up to its `buffer_time` for the windup to allow the
+-- heavy attack at its chain time. So the threshold is the rest of that hold, unless the chain time
+-- comes more than one buffer time later, which a release must then wait for. The hold timer starts
+-- with the press, which in an attack chain can be before the windup; the part of the hold already
+-- done is read from the input parser, and when it cannot be read the hold is counted from the
+-- windup start, which is never early. A release made in reaction to READY lands at least one fixed
+-- step later, which keeps it past the light attack's inclusive time window and the queued input
+-- alive at the chain time, so no extra margin is needed. The threshold is 0 when the hold is
+-- complete and the chain time is within one buffer time of the windup start.
 --
 -- Takes the first heavy attack transition of `HEAVY_CHAIN_INPUTS` in the windup's
 -- `allowed_chain_actions`; of several alternatives the latest chain time is used, since the
 -- conditions that pick one are not known here. Like the action handler's chain check, the chain
 -- time is divided by the action's time scale. A `chain_until` only opens an earlier window and is
--- ignored. Nothing is returned when the hold duration is unknown or no positive, finite threshold
--- can be resolved.
+-- ignored. Nothing is returned when the hold duration is unknown or no finite threshold can be
+-- resolved.
 -- tab: action windup action instance
 -- ?tab: action_settings settings of the windup action
 -- tab: weapon_action_component the local player's weapon_action component
+-- number: t fixed-step time the windup started at
 -- treturn: ?number threshold in seconds of time in action
 -- treturn: ?string action input of the heavy attack transition
 -- treturn: ?number hold duration of the heavy attack input
 -- treturn: ?number unscaled chain time
 -- treturn: ?number action time scale
 -- treturn: ?number buffer time of the heavy attack input, 0 when it has none
-local function _resolve_heavy_threshold(action, action_settings, weapon_action_component)
+-- treturn: ?number hold already done at the windup start, or nil when it could not be read
+-- treturn: ?bool true when the heavy attack input had already been released at the windup start
+local function _resolve_heavy_threshold(action, action_settings, weapon_action_component, t)
     local allowed_chain_actions = action_settings and action_settings.allowed_chain_actions
 
     if type(allowed_chain_actions) ~= "table" then
@@ -454,18 +550,24 @@ local function _resolve_heavy_threshold(action, action_settings, weapon_action_c
         buffer_time = 0
     end
 
+    local hold_elapsed, hold_released = _heavy_hold_elapsed(action, chain_input, t, hold_duration)
+    local hold_remaining = hold_duration - (hold_elapsed or 0)
     -- Windup kinds never use the action handler's inverted time scale.
     local threshold = chain_time / time_scale - buffer_time
 
-    if threshold < hold_duration then
-        threshold = hold_duration
+    if threshold < hold_remaining then
+        threshold = hold_remaining
     end
 
-    if not (threshold > 0 and threshold < math_huge) then
+    if threshold < 0 then
+        threshold = 0
+    end
+
+    if not (threshold >= 0 and threshold < math_huge) then
         return nil
     end
 
-    return threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time
+    return threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time, hold_elapsed, hold_released
 end
 
 -- ----------------------------------------------------------------------------
@@ -598,10 +700,10 @@ Tracker.on_windup_start = function (action, t)
     end
 
     local action_name = weapon_action_component.current_action_name
-    local heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time
+    local heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time, hold_elapsed, hold_released
 
     if show_heavy_threshold then
-        heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time = _resolve_heavy_threshold(action, action_settings, weapon_action_component)
+        heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time, hold_elapsed, hold_released = _resolve_heavy_threshold(action, action_settings, weapon_action_component, t)
     end
 
     if count == 0 and not heavy_threshold then
@@ -628,9 +730,10 @@ Tracker.on_windup_start = function (action, t)
 
     state.active = true
     state.mode = count > 0 and MODE_EFFECTS or MODE_HEAVY_READINESS
+    state.tracks_heavy = heavy_threshold ~= nil
     state.heavy_threshold = heavy_threshold or 0
     state.ready_t = ready_t
-    state.heavy_fraction = heavy_threshold and heavy_threshold / ready_t or 0
+    state.heavy_fraction = heavy_threshold and ready_t > 0 and heavy_threshold / ready_t or 0
     state.heavy_available = false
     state.action = action
     state.unit = action._player_unit
@@ -647,13 +750,17 @@ Tracker.on_windup_start = function (action, t)
     state.ready = false
 
     if mod._settings.debug_logging then
+        -- How much of the hold was done before the windup, `released` when the heavy attack input had
+        -- already been released, or `?` when the input parser could not be read.
+        local held = hold_elapsed and string_format("%.2fs", hold_elapsed) or hold_released and "released" or "?"
+
         if count == 0 then
-            mod:echo(DEBUG_PREFIX .. "windup %s: regular heavy, threshold %.2fs (%s hold %.2fs, chain %.2fs, time scale %.2f, buffer %.2fs)", tostring(action_name), heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time)
+            mod:echo(DEBUG_PREFIX .. "windup %s: regular heavy, threshold %.2fs (%s hold %.2fs, held %s, chain %.2fs, time scale %.2f, buffer %.2fs)", tostring(action_name), heavy_threshold, chain_input, hold_duration, held, chain_time, time_scale, buffer_time)
         else
             mod:echo(DEBUG_PREFIX .. "windup %s: first trigger %.2fs, step %.2fs, effects: %s", tostring(action_name), first_trigger_t, state.interval, _debug_effects())
 
             if heavy_threshold then
-                mod:echo(DEBUG_PREFIX .. "heavy threshold %.2fs (%s hold %.2fs, chain %.2fs, time scale %.2f, buffer %.2fs), expected READY %.2fs", heavy_threshold, chain_input, hold_duration, chain_time, time_scale, buffer_time, ready_t)
+                mod:echo(DEBUG_PREFIX .. "heavy threshold %.2fs (%s hold %.2fs, held %s, chain %.2fs, time scale %.2f, buffer %.2fs), expected READY %.2fs", heavy_threshold, chain_input, hold_duration, held, chain_time, time_scale, buffer_time, ready_t)
             end
         end
     end
@@ -778,7 +885,7 @@ Tracker.refresh = function (timing_mode)
     local fill = 1
     local confirmed_count = 0
     local heavy_threshold = state.heavy_threshold
-    local shows_heavy = heavy_threshold > 0
+    local shows_heavy = state.tracks_heavy
     local heavy_available = shows_heavy and (state.heavy_available or time_in_action >= heavy_threshold)
     local heavy_fraction = state.heavy_fraction
     local ring_fill = 1

@@ -79,8 +79,11 @@ Turn the setting off to show the ring only while the effects above build, as in 
 
 The threshold is read from the game for each charge, never hard-coded. The game decides light or heavy when you let go: once the weapon's heavy attack input has been held for its hold time (0.25 to 0.45 s depending on the weapon), a release is queued as a heavy attack. The charging action then starts the heavy swing at its own `chain_time`, which differs between weapons, marks and combo steps and is shortened by attack speed. A queued heavy waits for that moment for up to its buffer time (0.5 s), so:
 
-* The threshold is the heavy attack input's hold time. On most weapons this is before the heavy swing can start, so the ring can turn lime or green shortly before the swing begins after you let go - the attack is the same as if you had held on.
-* Only if the action's `chain_time` (divided by the attack speed time scale, like the game does) comes more than the buffer time after the hold time, the threshold waits until releasing is within the buffer time of it. No current weapon needs this.
+* The threshold is the end of the heavy attack input's hold. On most weapons this is before the heavy swing can start, so the ring can turn lime or green shortly before the swing begins after you let go - the attack is the same as if you had held on.
+* The game starts the hold timer when you press attack. In an attack chain that is often while the previous swing still runs, so part of the hold - or all of it - is done before the new charge even starts. The mod reads that timer from the game's input handling, so the threshold comes correspondingly earlier, or right at the start of the charge.
+* Only if the action's `chain_time` (divided by the attack speed time scale, like the game does) comes more than the buffer time after the end of the hold, the threshold waits until releasing is within the buffer time of it. No current weapon needs this.
+
+Melee attack speed shortens `chain_time` and speeds up the animations, but not the hold time: the game measures the hold in real time, so the moment a release counts as a heavy attack does not move with attack speed.
 
 The threshold runs entirely on your client's own windup timer, as no server stacks are involved, so `READY timing` does not apply to it: the lime phase starts at the same moment in both modes. If no threshold can be resolved for a charge, a charge without effects shows no ring, and a charge with effects shows the ring as with the setting off.
 
@@ -136,7 +139,7 @@ With `Debug output` enabled, every windup writes its transitions to your own cha
 
 ```text
 [Perfect Thrust] windup action_melee_start_left: first trigger 0.40s, step 0.25s, effects: <child buff> 0/3
-[Perfect Thrust] heavy threshold 0.35s (heavy_attack hold 0.35s, chain 0.40s, time scale 1.00, buffer 0.50s), expected READY 0.90s
+[Perfect Thrust] heavy threshold 0.35s (heavy_attack hold 0.35s, held 0.00s, chain 0.40s, time scale 1.00, buffer 0.50s), expected READY 0.90s
 [Perfect Thrust] heavy attack available after 0.35s
 [Perfect Thrust] <child buff> confirmed at 1/3 after 0.47s (1 triggers)
 [Perfect Thrust] READY after 0.90s (3 triggers, predicted): <child buff> 2/3
@@ -146,12 +149,12 @@ With `Debug output` enabled, every windup writes its transitions to your own cha
 With `Show heavy attack threshold` off, the `heavy threshold` and `heavy attack available` lines are missing. A windup without any relevant effect logs a single `no charge-dependent effect` line, or, with the setting on, tracks the heavy attack threshold alone:
 
 ```text
-[Perfect Thrust] windup action_melee_start_left: regular heavy, threshold 0.35s (heavy_attack hold 0.35s, chain 0.40s, time scale 1.00, buffer 0.50s)
+[Perfect Thrust] windup action_melee_start_left: regular heavy, threshold 0.35s (heavy_attack hold 0.35s, held 0.00s, chain 0.40s, time scale 1.00, buffer 0.50s)
 [Perfect Thrust] READY after 0.35s (regular heavy)
 [Perfect Thrust] end (new_interrupting_action) after 0.55s, ready=true (regular heavy)
 ```
 
-If no heavy attack threshold can be resolved for a windup, it logs `no charge-dependent effect, no heavy attack threshold`. An effect left out because its condition is not met logs `<child buff> skipped: its condition is not met in this windup` before the windup line. In the first example above, the predicted READY lands before the third stack has arrived from the server - that gap is the network delay Predicted mode removes.
+`held` is how much of the heavy attack input's hold was already done when the charge started - above 0 in attack chains where you pressed during the previous swing. It shows `released` when you had already let go before the charge started, typically a quick tap during the previous swing that turns into a light attack right away, and `?` when the game's input handling could not be read; in both cases the hold is counted from the start of the charge. If no heavy attack threshold can be resolved for a windup, it logs `no charge-dependent effect, no heavy attack threshold`. An effect left out because its condition is not met logs `<child buff> skipped: its condition is not met in this windup` before the windup line. In the first example above, the predicted READY lands before the third stack has arrived from the server - that gap is the network delay Predicted mode removes.
 
 ## Limitations
 
@@ -159,7 +162,7 @@ If no heavy attack threshold can be resolved for a windup, it logs `no charge-de
 * **Conditions are checked once, when you start charging.** If a conditional effect loses its condition before its first stack - for example you stop sprinting right after starting a Relic Blade sprint heavy - READY does not come for that charge: the ring waits in lime (or stays hidden with `Show heavy attack threshold` off) instead of turning green at the heavy attack threshold.
 * **Very high ping.** Effects are counted once their first stack has arrived. Above roughly 250-500 ms, a second effect's first stack may not have arrived yet when another effect is capped, which can make a predicted READY early.
 * **With `Show heavy attack threshold` off, the ring of a charge with effects appears about one ping after the heavy threshold**, in both modes, because an effect is only shown once its first stack has arrived from the server. Its fill is already correct when it appears.
-* **The heavy attack threshold can be slightly late in attack chains.** The heavy attack input's hold time is counted from the start of the charge, although the game starts counting it when you press attack, which can be earlier when you press during the previous swing. Conditions the game checks for a few heavy attacks themselves, such as the weapon special still being active or not aiming with the shield shotpistol, are not evaluated.
+* **The hold timer comes from game internals.** The mod reads the heavy attack input's hold timer from the game's input handling. If a game update changes it, the mod counts the hold from the start of the charge instead, which is never early but can make the threshold late in attack chains; debug output then shows `held ?`. Conditions the game checks for a few heavy attacks themselves, such as the weapon special still being active or not aiming with the shield shotpistol, are not evaluated.
 * **The ring stays at the screen centre plus your offset.** It does not follow the crosshair's small recoil and sway drift, which melee weapons barely have.
 * **"Fully charged" effects are not tracked.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks. READY does not mean the attack counts as fully charged for them.
 * **Only effects that stack from the windup trigger are detected.** An effect that builds while charging in some other way, or has no child buff with a stack limit, is not recognised. At most four effects are tracked per charge.

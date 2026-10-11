@@ -6,8 +6,10 @@
 -- the HUD element re-applies them only when needed; on load it first folds the removed opacity
 -- setting of earlier versions into the colour settings' alpha, once. Loads the tracker
 -- (`PerfectThrust_tracker.lua`) as `mod._tracker` and feeds it from `hook_safe` hooks on the
--- melee windup actions, which only observe the game: no input, timing or buff is changed.
--- Registers the ring HUD element (`ui/PerfectThrust_hud_element.lua`).
+-- melee windup actions, which only observe the game: no input, timing or buff is changed. Loads
+-- the aim tracker (`PerfectThrust_aim_tracker.lua`) as `mod._aim_tracker`, which needs no hooks:
+-- the HUD element polls it while aiming down sights. Registers the ring HUD element
+-- (`ui/PerfectThrust_hud_element.lua`).
 -- module: PerfectThrust
 -- author: LucLeto
 local mod = get_mod("PerfectThrust")
@@ -24,6 +26,7 @@ local settings = {
     display_mode = "progress",
     timing_mode = "predicted",
     show_heavy_threshold = true,
+    show_ads_blessings = true,
     ring_radius = 32,
     ring_thickness = 3,
     offset_x = 0,
@@ -42,6 +45,7 @@ local SETTING_IDS = {
     "display_mode",
     "timing_mode",
     "show_heavy_threshold",
+    "show_ads_blessings",
     "ring_radius",
     "ring_thickness",
     "offset_x",
@@ -156,6 +160,11 @@ mod._tracker = mod:io_dofile("PerfectThrust/scripts/mods/PerfectThrust/PerfectTh
 
 local Tracker = mod._tracker
 
+--- Aim state and aiming blessing detection, polled by the HUD element.
+mod._aim_tracker = mod:io_dofile("PerfectThrust/scripts/mods/PerfectThrust/PerfectThrust_aim_tracker")
+
+local AimTracker = mod._aim_tracker
+
 --- Forwards the start of a windup action to the tracker.
 -- tab: self windup action instance
 -- tab: action_settings action settings
@@ -190,12 +199,13 @@ mod:hook_safe(CLASS.ActionBlockWindup, "fixed_update", on_windup_fixed_update)
 -- DMF callbacks
 -- ----------------------------------------------------------------------------
 
---- DMF callback for game state changes; entering or leaving gameplay stops any tracked windup.
+--- DMF callback for game state changes; entering or leaving gameplay stops any tracked windup or aim.
 -- string: status `enter` or `exit`
 -- string: state_name game state class name
 mod.on_game_state_changed = function (status, state_name)
     if state_name == "StateGameplay" then
         Tracker.reset()
+        AimTracker.reset()
     end
 end
 
@@ -204,12 +214,15 @@ mod.on_enabled = function ()
     refresh_settings()
 
     Tracker.reset()
+    AimTracker.reset()
 end
 
 --- DMF callback run when the mod is disabled; stops tracking, which hides the ring.
--- DMF disables the hooks of a disabled mod, so nothing starts tracking again until it is enabled.
+-- DMF disables the hooks of a disabled mod, so nothing starts tracking again until it is enabled;
+-- the aim tracker is only polled by the HUD element, which DMF removes along with the mod.
 mod.on_disabled = function ()
     Tracker.reset()
+    AimTracker.reset()
 end
 
 -- ----------------------------------------------------------------------------

@@ -1,10 +1,10 @@
 --- Perfect Thrust's DMF mod data; the mod description and the settings menu.
 -- The returned table names the mod, makes it togglable and declares one `Charge indicator`
--- group: display mode, READY timing, heavy attack threshold, ring size, thickness, horizontal and
--- vertical offset, READY pulse, the unfilled, charging, heavy attack available, READY and READY
--- pulse colours and debug output. Every option has a `<setting_id>_tooltip`. Colours are DMF colour
--- pickers with alpha, stored as `{ a, r, g, b }`; their alpha replaces the opacity setting of
--- earlier versions, which `PerfectThrust.lua` migrates once.
+-- group: display mode, READY timing, heavy attack threshold, aiming blessings, ring size, thickness,
+-- horizontal and vertical offset, READY pulse, the unfilled, charging, heavy attack available,
+-- READY and READY pulse colours and debug output. Every option has a `<setting_id>_tooltip`.
+-- Colours are DMF colour pickers with alpha, stored as `{ a, r, g, b }`; their alpha replaces the
+-- opacity setting of earlier versions, which `PerfectThrust.lua` migrates once.
 --
 -- Loaded by DMF as `mod_data`, as declared in `PerfectThrust.mod`. The defaults here must match
 -- the `settings` table in `PerfectThrust.lua`, which caches the values at runtime.
@@ -48,6 +48,12 @@ return {
                         type = "checkbox",
                         default_value = true,
                         tooltip = "show_heavy_threshold_tooltip"
+                    },
+                    {
+                        setting_id = "show_ads_blessings",
+                        type = "checkbox",
+                        default_value = true,
+                        tooltip = "show_ads_blessings_tooltip"
                     },
                     {
                         setting_id = "ring_radius",

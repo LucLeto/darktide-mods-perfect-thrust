@@ -3,6 +3,8 @@ Perfect Thrust adds a small ring around the crosshair that shows when a charged 
 
 By default the ring also marks the moment a charge counts as a heavy attack: it turns lime there while the effects keep building, and without any of these effects it simply turns green there (see [Heavy attack threshold](#heavy-attack-threshold)).
 
+The same ring also works while you aim down sights with the ranged blessings **Surgical** and **Pinpointing Target**, which build stacks while aiming: it fills as the stacks build and turns green once they are all at their maximum (see [Aiming blessings](#aiming-blessings)).
+
 The mod is purely visual. It never releases attacks, changes timings, simulates input or alters buffs.
 
 ## Display
@@ -100,6 +102,50 @@ All of these effects are granted by the server. A multiplayer client only sees e
 
 In solo play the server runs locally, so there is no network delay and both modes behave practically the same.
 
+## Aiming blessings
+
+With `Show aiming blessings` on (the default), the ring is also shown while you aim down sights with a ranged weapon that carries one of these blessings. The stacks build while you keep aiming and are lost when you fire or stop aiming, so the ring answers the same question as for melee: when has holding on paid off completely?
+
+| Blessing | Weapons | Max stacks | Per stack | Interval T1 / T2 / T3 / T4 | Full after (T4) |
+| --- | --- | --- | --- | --- | --- |
+| Surgical | Boltguns, Heavy Stubbers, Kickback, Thugshot, Vigilant Autoguns | 10 | +10 % Critical Chance | 0.35 / 0.3 / 0.25 / 0.2 s | 2.0 s |
+| Surgical | Bolt Pistols, Helbore Lasguns, Shotpistol & Shield, Stub Revolvers | 10 | +10 % Critical Chance | 0.45 / 0.4 / 0.35 / 0.3 s | 3.0 s |
+| Surgical | Phosphor Blast Pistol | 10 | +10 % Critical Chance | 0.45 / 0.4 / 0.35 / 0.325 s | 3.25 s |
+| Pinpointing Target | Galvanic Rifle | 5 | +1 / 1.5 / 2 / 2.5 % Strength | 0.4 s | 2.0 s |
+| Pinpointing Target | Phosphor Blast Pistol | 5 | +1 / 2 / 3 / 4 % Strength | 0.4 s | 2.0 s |
+| Pinpointing Target | Grenadier Gauntlet, Shotpistol & Shield | 5 | +5 / 6 / 7 / 8 % Strength | 0.4 s | 2.0 s |
+
+Values are taken from the game's blessing definitions and kuli's guides; the mod itself reads the interval and the number of stacks of your blessing's tier from the game for each aim, so nothing is hard-coded per weapon.
+
+| State | Ring |
+| --- | --- |
+| Aiming, stacks building | Amber segments fill clockwise from the top, reaching each stack exactly when the game grants it |
+| READY - every aiming blessing on the weapon is at its maximum | Fully green, with a brief pulse; it stays green while you keep aiming |
+| Shot fired while still aiming | The ring starts over from empty, as the stacks do, and pulses again at the next READY |
+| Stopped aiming, reloaded, switched weapons, staggered, pushed with the Shotpistol & Shield, downed | Hidden immediately |
+
+* **Both blessings on one weapon** (Phosphor Blast Pistol, Shotpistol & Shield): READY waits for the slower one. With a T4 Surgical and Pinpointing Target on the Phosphor Blast Pistol, Pinpointing Target is full after 2.0 s, but READY comes at 3.25 s.
+* **Only the weapon in your hands counts.** Blessings of a holstered weapon are ignored, as the game ignores them too.
+* **Melee charges come first.** If you start a melee charge while aiming, such as the Shotpistol & Shield's bash from a raised shield, the ring shows that charge until it ends. The push itself ends the aim and removes the stacks, so a new aim starts from empty.
+* `Display`, `READY pulse` and the colors apply as for melee; `READY only` shows the ring only at READY. The heavy attack available color is never used while aiming.
+
+`READY timing` does not apply to aiming. Unlike the melee effects, these blessings have no stack count that the server sends to your client: the game computes their stacks from how long you have been aiming since you started or last fired, using the same aim timer on your client and on the server. The ring follows that timer directly, so it is on time in both solo and multiplayer, with no network delay to wait for.
+
+<details>
+<summary>Buff templates (for modders)</summary>
+
+Every weapon's blessing is a clone of one of two base buff templates in `base_weapon_trait_buff_templates.lua` and keeps its `start_func`, which the mod uses to recognise it:
+
+| Blessing | Base template | Buff class | Steps |
+| --- | --- | --- | --- |
+| Surgical (`weapon_trait_bespoke_<weapon>_crit_chance_based_on_aim_time`) | `chance_based_on_aim_time` | `stepped_stat_buff` | `floor(time_lapsed / duration_per_stack)`, limited by `min_max_step_func` (0-10) |
+| Pinpointing Target (`weapon_trait_bespoke_<weapon>_increases_power_while_aiming`) | `power_level_on_aim_time` | `proc_buff` with a lerped stat | `min(floor(time_lapsed / duration_per_step), num_steps_for_max_stat)` |
+| Pinpointing Target, Grenadier Gauntlet (`weapon_trait_bespoke_ogryn_gauntlet_p1_windup_increases_power`) | clone of `chance_based_on_aim_time` with its own step functions | `stepped_stat_buff` | as Surgical, limited to 0-5 |
+
+`time_lapsed` is `FixedFrame.get_latest_fixed_time()` minus the later of `alternate_fire_component.start_t` and `action_shoot_component.fire_last_t`, and only counts while `alternate_fire_component.is_active`. The interval and step count come from the blessing tier's trait override (`duration_per_stack`, or `duration_per_step` and `num_steps_for_max_stat`) and otherwise from the template. The mod scans your buffs once when an aim starts and then evaluates that formula on your own components each frame; it never calls a buff's step function or writes to a buff.
+
+</details>
+
 ## Settings
 
 `Charge indicator` group:
@@ -109,6 +155,7 @@ In solo play the server runs locally, so there is no network delay and both mode
 | Display | Progress + READY | Progress + READY / READY only |
 | READY timing | Predicted | Predicted / Server-confirmed |
 | Show heavy attack threshold | On | Shows the ring from the start of every charge and marks the heavy attack threshold |
+| Show aiming blessings | On | Shows the ring while aiming with Surgical or Pinpointing Target (see [Aiming blessings](#aiming-blessings)) |
 | Ring size | 32 | 12-150 px radius at 1080p |
 | Ring thickness | 3 | 1-10 px per segment at 1080p |
 | Horizontal offset | 0 | -960 to 960 px from the screen centre |
@@ -156,6 +203,17 @@ With `Show heavy attack threshold` off, the `heavy threshold` and `heavy attack 
 
 `held` is how much of the heavy attack input's hold was already done when the charge started - above 0 in attack chains where you pressed during the previous swing. It shows `released` when you had already let go before the charge started, typically a quick tap during the previous swing that turns into a light attack right away, and `?` when the game's input handling could not be read; in both cases the hold is counted from the start of the charge. If no heavy attack threshold can be resolved for a windup, it logs `no charge-dependent effect, no heavy attack threshold`. An effect left out because its condition is not met logs `<child buff> skipped: its condition is not met in this windup` before the windup line. In the first example above, the predicted READY lands before the third stack has arrived from the server - that gap is the network delay Predicted mode removes.
 
+Aiming with `Show aiming blessings` on writes `ADS` lines. The times count from the start of the aim or the last shot, whichever is later; `10 x 0.2s` is the step count and interval of your blessing's tier:
+
+```text
+[Perfect Thrust] ADS slot_secondary: expected READY 2.00s, blessings: weapon_trait_bespoke_bolter_p1_crit_chance_based_on_aim_time 10 x 0.2s
+[Perfect Thrust] READY after 2.00s (ADS): weapon_trait_bespoke_bolter_p1_crit_chance_based_on_aim_time 10/10
+[Perfect Thrust] ADS shot after 2.63s, ready=true: weapon_trait_bespoke_bolter_p1_crit_chance_based_on_aim_time 10/10
+[Perfect Thrust] ADS end (left ADS) after 0.87s, 1 shots, ready=false: weapon_trait_bespoke_bolter_p1_crit_chance_based_on_aim_time 4/10
+```
+
+An aim with a weapon that has no aiming blessing logs a single `ADS slot_secondary: no aiming blessing` line. The end reason is `left ADS`, `ADS restarted` (a new aim began before the previous end was seen, for example while a Shotpistol & Shield bash held the ring), `weapon switched` or `player unit changed`. A blessing whose interval or step count cannot be read logs `<buff> skipped: its interval or step count could not be resolved`.
+
 ## Limitations
 
 * **Predicted mode assumes every trigger after the first stack grants another one.** That holds for all effects listed above while their condition stays true. If a conditional effect loses its condition mid-charge - for example you stop sprinting during a sprint heavy - Predicted mode can show READY before that effect is actually capped. Use `Server-confirmed` if this matters to you.
@@ -166,7 +224,9 @@ With `Show heavy attack threshold` off, the `heavy threshold` and `heavy attack 
 * **The ring stays at the screen centre plus your offset.** It does not follow the crosshair's small recoil and sway drift, which melee weapons barely have.
 * **"Fully charged" effects are not tracked.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks. READY does not mean the attack counts as fully charged for them.
 * **Only effects that stack from the windup trigger are detected.** An effect that builds while charging in some other way, or has no child buff with a stack limit, is not recognised. At most four effects are tracked per charge.
-* **Ranged charging is not covered.** Plasma guns, force staves and other charged ranged weapons use a separate charge mechanic that the game's own crosshair already displays.
+* **Ranged charging is not covered.** Plasma guns, force staves and other charged ranged weapons use a separate charge mechanic that the game's own crosshair already displays. Of the ranged blessings, only Surgical and Pinpointing Target, which build stacks over aim time, are tracked.
+* **The Grenadier Gauntlet keeps its stacks briefly after a shot.** Its Pinpointing Target holds the stacks from before the shot for 0.8 s, so the grenade in flight keeps them, and then continues as if it had restarted at the shot. The ring restarts at the shot, which is when the stacks for the next shot start building; READY comes at the same moment as the game's maximum.
+* **Pinpointing Target pauses during a shot's own start.** On the server its stacks freeze from the start of a shot until the shot fires, which on most weapons is the same moment. The ring keeps counting during that short gap and restarts when the shot fires.
 * **No Custom HUD integration.** Position the ring with the offset settings.
 * The mod reads a few internal fields of the game's weapon actions and buffs. A game update that renames them disables the ring until the mod is updated; it does not affect gameplay.
 
@@ -176,3 +236,6 @@ Blessing, talent and weapon names and values are taken from the excellent guides
 
 * [\[1.13.x\] Melee Weapon Blessings & Mechanics](https://steamcommunity.com/sharedfiles/filedetails/?id=3286161222)
 * [\[1.13.x\] Ogryn Talents & Mechanics](https://steamcommunity.com/sharedfiles/filedetails/?id=3094034467)
+* [Ranged Weapon Blessings & Mechanics](https://steamcommunity.com/sharedfiles/filedetails/?id=3293278399)
+
+Tracking of the aiming blessings was requested by [Rymdkapsel](https://next.nexusmods.com/profile/Rymdkapsel) on [Nexus Mods](https://www.nexusmods.com/warhammer40kdarktide/mods/1402?tab=posts).

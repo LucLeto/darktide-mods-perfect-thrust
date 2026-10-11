@@ -4,19 +4,23 @@
 -- top while charging, the lit segments switch to the heavy attack available colour once a release
 -- counts as a heavy attack while charge-dependent effects still build, the whole ring switches to
 -- the READY colour at READY, each switch with an optional short pulse, and it hides as soon as the
--- tracker stops. All five colours come from the settings (amber charging, lime heavy attack
--- available and green READY by default). Colours and geometry are only rewritten when the lit
--- count, the READY or heavy attack state, the pulse colour phase or the settings change.
+-- tracker stops. Without a tracked windup and with the `show_ads_blessings` setting on, it asks the
+-- aim tracker instead, which fills the same ring while aiming blessings build and reports READY
+-- once they are at their maximum. All five colours come from the settings (amber charging, lime
+-- heavy attack available and green READY by default). Colours and geometry are only rewritten when
+-- the lit count, the READY or heavy attack state, the pulse colour phase or the settings change.
 --
 -- Loaded by DMF from the `register_hud_element` call in `PerfectThrust.lua` and returned as the
 -- `HudElementPerfectThrust` class, with the crosshair's visibility groups and without the HUD
--- scale. Reads its settings from `mod._settings` and its state from `mod._tracker`.
+-- scale. Reads its settings from `mod._settings` and its state from `mod._tracker` and
+-- `mod._aim_tracker`.
 -- classmod: HudElementPerfectThrust
 -- author: LucLeto
 local mod = get_mod("PerfectThrust")
 local UIWidget = require("scripts/managers/ui/ui_widget")
 local UIWorkspaceSettings = require("scripts/settings/ui/ui_workspace_settings")
 local Tracker = mod._tracker
+local AimTracker = mod._aim_tracker
 
 local math_clamp = math.clamp
 local math_cos = math.cos
@@ -30,6 +34,10 @@ local math_sin = math.sin
 
 --- `display_mode` setting value that shows the ring only at READY.
 local DISPLAY_MODE_READY_ONLY = "ready_only"
+
+--- Sources of the shown ring: a tracked melee windup, or an aim with aiming blessings.
+local SOURCE_WINDUP = "windup"
+local SOURCE_AIM = "aim"
 
 --- Number of segments in the ring, the first one at the top and the rest clockwise.
 -- Fixed so the widget passes can be built once; the angle of segment `i` is
@@ -172,6 +180,7 @@ HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
     self._radius = 32
     self._thickness = 3
     self._shown = false
+    self._source = nil
     self._ready_seen = false
     self._heavy_seen = false
     self._pulse_remaining = 0
@@ -198,9 +207,12 @@ HudElementPerfectThrust._clear_render_cache = function (self)
 end
 
 --- Updates the ring from the tracker once per frame.
--- Applies changed settings first. While no windup is tracked this costs one check; otherwise it
--- refreshes the tracker, hides the ring when there is nothing to show (or, in `ready_only` mode,
--- until READY), starts the pulse the first time the heavy attack becomes available before READY
+-- Applies changed settings first. A tracked windup always takes the ring; without one, the aim
+-- tracker is refreshed while the `show_ads_blessings` setting is on, which costs one component
+-- check while not aiming. With the setting off and no windup this costs one check, as before.
+-- It hides the ring when there is nothing to show (or, in `ready_only` mode, until READY), starts
+-- over as a new ring when the other tracker takes it or a shot restarts the aiming blessings
+-- after READY, starts the pulse the first time the heavy attack becomes available before READY
 -- and the first time READY is reached, and advances it.
 -- number: dt frame delta time
 -- number: t time
@@ -216,15 +228,27 @@ HudElementPerfectThrust.update = function (self, dt, t, ui_renderer, render_sett
         self:_apply_display_settings(settings)
     end
 
-    if not Tracker.is_charging_heavy_attack() then
+    local source, visible, fill, ready, heavy_available
+
+    if Tracker.is_charging_heavy_attack() then
+        source = SOURCE_WINDUP
+        visible, fill, ready, heavy_available = Tracker.refresh(settings.timing_mode)
+    elseif settings.show_ads_blessings then
+        source = SOURCE_AIM
+        visible, fill, ready = AimTracker.refresh(self._parent:player_extensions())
+        heavy_available = false
+    else
+        -- Aim tracking was turned off: drop an aim that is still open.
+        if AimTracker.is_tracking() then
+            AimTracker.reset()
+        end
+
         if self._shown then
             self:_hide()
         end
 
         return
     end
-
-    local visible, fill, ready, heavy_available = Tracker.refresh(settings.timing_mode)
 
     if visible and not ready and settings.display_mode == DISPLAY_MODE_READY_ONLY then
         visible = false
@@ -238,10 +262,17 @@ HudElementPerfectThrust.update = function (self, dt, t, ui_renderer, render_sett
         return
     end
 
+    -- A melee windup during an aim, or a shot after READY, starts a new ring in the same frame, so
+    -- no stale READY or pulse state carries over. A windup's READY never goes back.
+    if self._shown and (source ~= self._source or source == SOURCE_AIM and self._ready_seen and not ready) then
+        self:_hide()
+    end
+
     local widget = self._widgets_by_name.ring
 
     if not self._shown then
         self._shown = true
+        self._source = source
         widget.content.visible = true
         widget.dirty = true
     end
@@ -354,9 +385,10 @@ HudElementPerfectThrust._apply_geometry = function (self, thickness_scale)
     widget.dirty = true
 end
 
---- Hides the ring, ends a running pulse and resets the per-windup display state.
+--- Hides the ring, ends a running pulse and resets the per-windup or per-aim display state.
 HudElementPerfectThrust._hide = function (self)
     self._shown = false
+    self._source = nil
     self._ready_seen = false
     self._heavy_seen = false
 

@@ -127,7 +127,7 @@ Values are taken from the game's blessing definitions and kuli's guides; the mod
 * **Both blessings on one weapon** (Phosphor Blast Pistol, Shotpistol & Shield): READY waits for the slower one. With a T4 Surgical and Pinpointing Target on the Phosphor Blast Pistol, Pinpointing Target is full after 2.0 s, but READY comes at 3.25 s.
 * **Only the weapon in your hands counts.** Blessings of a holstered weapon are ignored, as the game ignores them too.
 * **Melee charges come first.** If you start a melee charge while aiming, such as the Shotpistol & Shield's bash from a raised shield, the ring shows that charge until it ends. The push itself ends the aim and removes the stacks, so a new aim starts from empty.
-* `Display`, `READY pulse` and the colors apply as for melee; `READY only` shows the ring only at READY. The heavy attack available color is never used while aiming.
+* **Its own look.** The aiming ring has its own display mode, size, thickness, position, READY pulse and colors in the `Aiming indicator` settings group, so it can differ from the melee ring - for example larger, or in `READY only` mode while the melee ring shows its progress. By default it looks exactly like the melee ring. It has no heavy attack available color, as aiming never shows that state.
 
 `READY timing` does not apply to aiming. Unlike the melee effects, these blessings have no stack count that the server sends to your client: the game computes their stacks from how long you have been aiming since you started or last fired, using the same aim timer on your client and on the server. The ring follows that timer directly, so it is on time in both solo and multiplayer, with no network delay to wait for.
 
@@ -155,7 +155,6 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Display | Progress + READY | Progress + READY / READY only |
 | READY timing | Predicted | Predicted / Server-confirmed |
 | Show heavy attack threshold | On | Shows the ring from the start of every charge and marks the heavy attack threshold |
-| Show aiming blessings | On | Shows the ring while aiming with Surgical or Pinpointing Target (see [Aiming blessings](#aiming-blessings)) |
 | Ring size | 32 | 12-150 px radius at 1080p |
 | Ring thickness | 3 | 1-10 px per segment at 1080p |
 | Horizontal offset | 0 | -960 to 960 px from the screen centre |
@@ -168,11 +167,23 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | READY pulse color | RGB `120, 225, 140`, alpha `255` (same as READY) | Any color and opacity, shown only during the READY pulse |
 | Debug output | Off | Writes charge-state transitions to the game's log file |
 
+`Aiming indicator` group, for the ring shown while aiming down sights (see [Aiming blessings](#aiming-blessings)):
+
+| Setting | Default | Range / options |
+| --- | --- | --- |
+| Show aiming blessings | On | Shows the ring while aiming with Surgical or Pinpointing Target |
+| Display | Progress + READY | Progress + READY / READY only |
+| Ring size, Ring thickness, Horizontal offset, Vertical offset | 32, 3, 0, 0 | As for the melee ring |
+| READY pulse | On | Briefly enlarges the ring segments at READY |
+| Unfilled segment color, Aiming progress color, READY color, READY pulse color | As for the melee ring | Any color and opacity |
+
+The two rings are set independently; changing one never changes the other.
+
 The ring scales with your resolution like the game's own crosshair and ignores the HUD scale option. Disabling the mod through the standard mod toggle hides the ring and stops all tracking.
 
 ### Colors
 
-Each ring state has its own color picker with an alpha channel, so color and opacity are set per state. Alpha runs from 0 (invisible) to 255 (fully opaque); by default the unfilled segments are faint (80), the charging (235) and heavy attack available (229) segments nearly opaque and READY fully opaque (255).
+Each ring state has its own color picker with an alpha channel, so color and opacity are set per state, separately for the melee and the aiming ring. Alpha runs from 0 (invisible) to 255 (fully opaque); by default the unfilled segments are faint (80), the charging (235) and heavy attack available (229) segments nearly opaque and READY fully opaque (255).
 
 `READY pulse color` is used only while the existing READY pulse runs, the 0.25-second enlargement of the segments when READY is first reached; the ring then switches to `READY color` for as long as you keep charging. With `READY pulse` off, the ring turns to `READY color` immediately and the pulse color is never shown. Because the pulse color defaults to the READY color, the pulse only changes the segment size unless you pick a different color. The pulse at the start of the lime phase keeps `Heavy attack available color`.
 

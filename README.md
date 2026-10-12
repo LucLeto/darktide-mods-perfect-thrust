@@ -165,7 +165,6 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Heavy attack available color | RGB `233, 255, 90`, alpha `229` (lime) | Any color and opacity, shown while the effects build after the heavy attack threshold |
 | READY color | RGB `120, 225, 140`, alpha `255` (green) | Any color and opacity |
 | READY pulse color | RGB `120, 225, 140`, alpha `255` (same as READY) | Any color and opacity, shown only during the READY pulse |
-| Debug output | Off | Writes charge-state transitions to the game's log file |
 
 `Aiming indicator` group, for the ring shown while aiming down sights (see [Aiming blessings](#aiming-blessings)):
 
@@ -178,6 +177,12 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Unfilled segment color, Aiming progress color, READY color, READY pulse color | As for the melee ring | Any color and opacity |
 
 The two rings are set independently; changing one never changes the other.
+
+`Miscellaneous` group (`Sonstiges` in German), for settings that apply to both rings:
+
+| Setting | Default | Range / options |
+| --- | --- | --- |
+| Debug output | Off | Writes charge and aim state transitions to the game's log file (see [Debug output](#debug-output)) |
 
 The ring scales with your resolution like the game's own crosshair and ignores the HUD scale option. Disabling the mod through the standard mod toggle hides the ring and stops all tracking.
 

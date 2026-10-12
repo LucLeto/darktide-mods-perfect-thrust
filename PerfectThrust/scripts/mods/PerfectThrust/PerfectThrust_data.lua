@@ -1,10 +1,11 @@
 --- Perfect Thrust's DMF mod data; the mod description and the settings menu.
--- The returned table names the mod, makes it togglable and declares two groups. `Charge
+-- The returned table names the mod, makes it togglable and declares three groups. `Charge
 -- indicator`: display mode, READY timing, heavy attack threshold, ring size, thickness, horizontal
--- and vertical offset, READY pulse, the unfilled, charging, heavy attack available, READY and READY
--- pulse colours and debug output. `Aiming indicator`: the aiming blessings switch and the aiming
--- ring's own display mode, size, thickness, offsets, READY pulse and colours, without the heavy
--- attack available colour. Every option has a tooltip. Colours are DMF colour pickers with alpha,
+-- and vertical offset, READY pulse and the unfilled, charging, heavy attack available, READY and
+-- READY pulse colours. `Aiming indicator`: the aiming blessings switch and the aiming ring's own
+-- display mode, size, thickness, offsets, READY pulse and colours, without the heavy attack
+-- available colour. `Miscellaneous`: debug output, which covers both rings. Every option has a
+-- tooltip. Colours are DMF colour pickers with alpha,
 -- stored as `{ a, r, g, b }`; the melee ring's alpha replaces the opacity setting of earlier
 -- versions, which `PerfectThrust.lua` migrates once.
 --
@@ -43,13 +44,6 @@ local charge_widgets = {
 
 RingSettings.append_widgets(charge_widgets, "", APPEARANCE_IDS)
 
-charge_widgets[#charge_widgets + 1] = {
-    setting_id = "debug_logging",
-    type = "checkbox",
-    default_value = false,
-    tooltip = "debug_logging_tooltip"
-}
-
 --- The `Aiming indicator` group: the aiming ring.
 local aim_widgets = {
     {
@@ -80,6 +74,19 @@ return {
                 type = "group",
                 tooltip = "aim_indicator_group_tooltip",
                 sub_widgets = aim_widgets
+            },
+            {
+                setting_id = "misc_group",
+                type = "group",
+                tooltip = "misc_group_tooltip",
+                sub_widgets = {
+                    {
+                        setting_id = "debug_logging",
+                        type = "checkbox",
+                        default_value = false,
+                        tooltip = "debug_logging_tooltip"
+                    }
+                }
             }
         }
     }

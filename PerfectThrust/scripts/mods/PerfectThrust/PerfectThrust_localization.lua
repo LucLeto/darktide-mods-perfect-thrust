@@ -1,6 +1,6 @@
 --- Perfect Thrust's DMF localization table for all twelve supported languages.
 -- Returns a table from localization id to a table of texts by language code; DMF resolves
--- `mod:localize(id)` against it. Holds the mod name and description, the two settings groups,
+-- `mod:localize(id)` against it. Holds the mod name and description, the three settings groups,
 -- every setting title and tooltip and the dropdown options. The aiming ring's settings reuse the
 -- melee ring's titles and tooltips, except for the `ads_` texts listed in
 -- `PerfectThrust_ring_settings.lua`. Texts are passed through `string.format`
@@ -262,6 +262,34 @@ return {
         ko = "조준하는 동안 중첩이 쌓이는 축복을 추적하는 조준선 주위의 링입니다. 표시 방식, 크기, 위치, 색상을 따로 설정합니다.",
         ["zh-cn"] = "准星周围的圆环，追踪瞄准时叠加层数的祝福，拥有独立的显示方式、大小、位置和颜色。",
         ["zh-tw"] = "準星周圍的圓環，追蹤瞄準時疊加層數的祝福，擁有獨立的顯示方式、大小、位置和顏色。",
+    },
+    misc_group = {
+        en = "Miscellaneous",
+        fr = "Divers",
+        de = "Sonstiges",
+        it = "Varie",
+        es = "Varios",
+        pl = "Różne",
+        ["pt-br"] = "Diversos",
+        ru = "Прочее",
+        ja = "その他",
+        ko = "기타",
+        ["zh-cn"] = "其他",
+        ["zh-tw"] = "其他",
+    },
+    misc_group_tooltip = {
+        en = "Settings that apply to both rings.",
+        fr = "Réglages communs aux deux anneaux.",
+        de = "Einstellungen, die für beide Ringe gelten.",
+        it = "Impostazioni comuni a entrambi gli anelli.",
+        es = "Ajustes que se aplican a ambos anillos.",
+        pl = "Ustawienia dotyczące obu pierścieni.",
+        ["pt-br"] = "Configurações que valem para os dois anéis.",
+        ru = "Настройки, общие для обоих колец.",
+        ja = "両方のリングに共通の設定です。",
+        ko = "두 링에 공통으로 적용되는 설정입니다.",
+        ["zh-cn"] = "适用于两个圆环的设置。",
+        ["zh-tw"] = "適用於兩個圓環的設定。",
     },
     ads_ready_pulse_tooltip = {
         en = "Briefly enlarges the ring segments when READY is reached.",

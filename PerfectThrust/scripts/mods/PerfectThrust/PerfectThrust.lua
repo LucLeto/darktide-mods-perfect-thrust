@@ -32,6 +32,7 @@ local settings = {
     timing_mode = "predicted",
     show_heavy_threshold = true,
     show_ads_blessings = true,
+    ads_follow_crosshair = true,
     debug_logging = false
 }
 
@@ -40,6 +41,7 @@ local SETTING_IDS = {
     "timing_mode",
     "show_heavy_threshold",
     "show_ads_blessings",
+    "ads_follow_crosshair",
     "debug_logging"
 }
 

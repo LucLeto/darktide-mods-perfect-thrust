@@ -3,8 +3,8 @@
 -- indicator`: display mode, READY timing, heavy attack threshold, ring size, thickness, horizontal
 -- and vertical offset, READY pulse and the unfilled, charging, heavy attack available, READY and
 -- READY pulse colours. `Aiming indicator`: the aiming blessings switch and the aiming ring's own
--- display mode, size, thickness, offsets, READY pulse and colours, without the heavy attack
--- available colour. `Miscellaneous`: debug output, which covers both rings. Every option has a
+-- display mode, crosshair following, size, thickness, offsets, READY pulse and colours, without
+-- the heavy attack available colour. `Miscellaneous`: debug output, which covers both rings. Every option has a
 -- tooltip. Colours are DMF colour pickers with alpha,
 -- stored as `{ a, r, g, b }`; the melee ring's alpha replaces the opacity setting of earlier
 -- versions, which `PerfectThrust.lua` migrates once.
@@ -52,7 +52,13 @@ local aim_widgets = {
         default_value = true,
         tooltip = "show_ads_blessings_tooltip"
     },
-    RingSettings.widget(ADS_PREFIX, "display_mode")
+    RingSettings.widget(ADS_PREFIX, "display_mode"),
+    {
+        setting_id = "ads_follow_crosshair",
+        type = "checkbox",
+        default_value = true,
+        tooltip = "ads_follow_crosshair_tooltip"
+    }
 }
 
 RingSettings.append_widgets(aim_widgets, ADS_PREFIX, APPEARANCE_IDS)

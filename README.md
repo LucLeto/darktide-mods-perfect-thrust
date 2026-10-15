@@ -9,7 +9,7 @@ The mod is purely visual. It never releases attacks, changes timings, simulates 
 
 ## Display
 
-The ring sits at the centre of the screen, around the crosshair. With `Show heavy attack threshold` on (the default) it is drawn from the moment you start charging an attack; with it off, only while a charge-dependent effect is building (colors shown are the defaults, see [Colors](#colors)):
+The ring sits around the crosshair. With `Follow crosshair` on (the default) it moves with the crosshair when the game's camera sway shifts it while you charge and move; otherwise it stays at the centre of the screen. With `Show heavy attack threshold` on (the default) it is drawn from the moment you start charging an attack; with it off, only while a charge-dependent effect is building (colors shown are the defaults, see [Colors](#colors)):
 
 | State | Ring |
 | --- | --- |
@@ -155,10 +155,11 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Display | Progress + READY | Progress + READY / READY only |
 | READY timing | Predicted | Predicted / Server-confirmed |
 | Show heavy attack threshold | On | Shows the ring from the start of every charge and marks the heavy attack threshold |
+| Follow crosshair | On | Moves the ring with the crosshair as the game's camera sway shifts it while you charge and move; the offsets then count from the crosshair. With the game's `Camera Sway Intensity` at 0 % the crosshair, and so the ring, stays centred. Off keeps the ring at the screen centre |
 | Ring size | 32 | 12-150 px radius at 1080p |
 | Ring thickness | 3 | 1-10 px per segment at 1080p |
-| Horizontal offset | 0 | -960 to 960 px from the screen centre |
-| Vertical offset | 0 | -540 to 540 px from the screen centre |
+| Horizontal offset | 0 | -960 to 960 px from the screen centre, or from the crosshair with `Follow crosshair` on |
+| Vertical offset | 0 | -540 to 540 px from the screen centre, or from the crosshair with `Follow crosshair` on |
 | READY pulse | On | Briefly enlarges the ring segments at READY and when the lime phase starts |
 | Unfilled segment color | RGB `70, 82, 86`, alpha `80` (faint grey) | Any color and opacity |
 | Charging progress color | RGB `240, 190, 90`, alpha `235` (amber) | Any color and opacity |
@@ -172,7 +173,7 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | --- | --- | --- |
 | Show aiming blessings | On | Shows the ring while aiming with Surgical or Pinpointing Target |
 | Display | Progress + READY | Progress + READY / READY only |
-| Follow crosshair | On | Moves the ring with the crosshair - the point your shots go to - as weapon sway and recoil shift your aim; the offsets then count from the crosshair. Like the game's crosshair, it does not follow the weapon model's own bobbing and kick animations, so the sights can drift slightly around it. Off keeps it at the screen centre |
+| Follow crosshair | On | Moves the ring with the crosshair - the point your shots go to - as weapon sway, recoil and camera sway move it; the offsets then count from the crosshair. Like the game's crosshair, it does not follow the weapon model's own bobbing and kick animations, so the sights can drift slightly around it. Off keeps it at the screen centre |
 | Ring size, Ring thickness, Horizontal offset, Vertical offset | 32, 3, 0, 0 | As for the melee ring |
 | READY pulse | On | Briefly enlarges the ring segments at READY |
 | Unfilled segment color, Aiming progress color, READY color, READY pulse color | As for the melee ring | Any color and opacity |
@@ -238,7 +239,7 @@ An aim with a weapon that has no aiming blessing logs a single `ADS slot_seconda
 * **Very high ping.** Effects are counted once their first stack has arrived. Above roughly 250-500 ms, a second effect's first stack may not have arrived yet when another effect is capped, which can make a predicted READY early.
 * **With `Show heavy attack threshold` off, the ring of a charge with effects appears about one ping after the heavy threshold**, in both modes, because an effect is only shown once its first stack has arrived from the server. Its fill is already correct when it appears.
 * **The hold timer comes from game internals.** The mod reads the heavy attack input's hold timer from the game's input handling. If a game update changes it, the mod counts the hold from the start of the charge instead, which is never early but can make the threshold late in attack chains; debug output then shows `held ?`. Conditions the game checks for a few heavy attacks themselves, such as the weapon special still being active or not aiming with the shield shotpistol, are not evaluated.
-* **The melee ring stays at the screen centre plus your offset.** It does not follow the crosshair's small recoil and sway drift, which melee weapons barely have. The aiming ring follows it with `Follow crosshair` on - your aim point, as the game's crosshair and hit marker show it, not the bobbing and kick animations of the weapon model, so the sights can drift slightly around the ring.
+* **The rings follow the crosshair, not the weapon model.** With `Follow crosshair` on, each ring follows the game's crosshair - your aim point, which camera sway, weapon sway and recoil move on screen - not the bobbing and kick animations of the weapon model, so the sights can drift slightly around the aiming ring.
 * **"Fully charged" effects are not tracked.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks. READY does not mean the attack counts as fully charged for them.
 * **Only effects that stack from the windup trigger are detected.** An effect that builds while charging in some other way, or has no child buff with a stack limit, is not recognised. At most four effects are tracked per charge.
 * **Ranged charging is not covered.** Plasma guns, force staves and other charged ranged weapons use a separate charge mechanic that the game's own crosshair already displays. Of the ranged blessings, only Surgical and Pinpointing Target, which build stacks over aim time, are tracked.

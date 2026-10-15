@@ -6,13 +6,13 @@
 -- the READY colour at READY, each switch with an optional short pulse, and it hides as soon as the
 -- tracker stops. Without a tracked windup and with the `show_ads_blessings` setting on, it asks the
 -- aim tracker instead, which fills the same ring while aiming blessings build and reports READY
--- once they are at their maximum. Each of the two rings has its own display mode, size, position,
--- READY pulse and colours (amber charging, lime heavy attack available and green READY by
--- default); the element applies the settings of the ring it shows. Colours and geometry are only
--- rewritten when the lit count, the READY or heavy attack state, the pulse colour phase, the shown
--- ring or the settings change. With the `ads_follow_crosshair` setting on, the aiming ring moves
--- with the game's crosshair as sway and recoil shift the aim, on top of its offset settings; the
--- melee ring always stays at its own position.
+-- once they are at their maximum. Each of the two rings has its own display mode, crosshair
+-- following, size, position, READY pulse and colours (amber charging, lime heavy attack available
+-- and green READY by default); the element applies the settings of the ring it shows. Colours and
+-- geometry are only rewritten when the lit count, the READY or heavy attack state, the pulse colour
+-- phase, the shown ring or the settings change. With its `follow_crosshair` setting on, the shown
+-- ring moves with the game's crosshair as camera sway, weapon sway and recoil move it, on top of
+-- its offset settings.
 --
 -- Loaded by DMF from the `register_hud_element` call in `PerfectThrust.lua` and returned as the
 -- `HudElementPerfectThrust` class, with the crosshair's visibility groups and without the HUD
@@ -63,9 +63,9 @@ local DEG_TO_RAD = math_pi / 180
 local PULSE_DURATION = 0.25
 local PULSE_EXTRA_SCALE = 0.6
 
---- Frame time passed to `Crosshair.position` on the first frame the aiming ring follows the
--- crosshair. The crosshair eases toward its aim point by `min(35 * dt, 1)` per frame, so this lands
--- on it at once instead of sliding in from the screen centre.
+--- Frame time passed to `Crosshair.position` on the first frame a ring follows the crosshair.
+-- The crosshair eases toward its aim point by `min(35 * dt, 1)` per frame, so this lands on it at
+-- once instead of sliding in from the screen centre.
 local CROSSHAIR_SNAP_DT = 1
 
 --- Default segment colours `{ a, r, g, b }` of the unlit, charging, heavy attack available and
@@ -343,11 +343,12 @@ HudElementPerfectThrust.update = function (self, dt, t, ui_renderer, render_sett
     end
 end
 
---- Moves the aiming ring with the crosshair, then draws the ring.
--- While the aiming ring is shown and the `ads_follow_crosshair` setting is on, the ring widget's
--- offset is the game's crosshair position, from `Crosshair.position` as the crosshair element
--- uses it, on top of the scenegraph position the offset settings set. On the first such frame it
--- starts at the crosshair's aim point. Otherwise the offset is back at zero, so the melee ring
+--- Moves the shown ring with the crosshair, then draws the ring.
+-- While a ring is shown and its `follow_crosshair` setting is on, the ring widget's offset is the
+-- game's crosshair position, from `Crosshair.position` as the crosshair element uses it, on top of
+-- the scenegraph position the offset settings set. On the first such frame it starts at the
+-- crosshair's aim point; a switch to the other ring that follows too carries on smoothly, as both
+-- follow the same crosshair. Otherwise the offset is back at zero, so a ring that does not follow
 -- never inherits it. Done here rather than in `update`, like the crosshair, so both read the same
 -- frame's camera.
 -- number: dt frame delta time
@@ -358,7 +359,7 @@ end
 HudElementPerfectThrust._draw_widgets = function (self, dt, t, input_service, ui_renderer, render_settings)
     local widget = self._widgets_by_name.ring
 
-    if self._shown and self._source == SOURCE_AIM and mod._settings.ads_follow_crosshair then
+    if self._shown and mod._settings[RING_KEYS[self._source].follow_crosshair] then
         -- The unscaled world position is the node's own table; scaling it here allocates nothing.
         local world_position = self:scenegraph_world_position("perfect_thrust_pivot")
         local pivot = self._crosshair_pivot

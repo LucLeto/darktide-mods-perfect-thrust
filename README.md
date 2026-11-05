@@ -3,13 +3,15 @@ Perfect Thrust adds a small ring around the crosshair that shows when a charged 
 
 By default the ring also marks the moment a charge counts as a heavy attack: it turns lime there while the effects keep building, and without any of these effects it simply turns green there (see [Heavy attack threshold](#heavy-attack-threshold)).
 
+After READY, one white segment travels once around the green ring until the weapon would release the attack on its own if you keep holding - the fully charged attack that blessings such as **Unstoppable Force** need (see [Auto-release marker](#auto-release-marker)).
+
 The same ring also works while you aim down sights with the ranged blessings **Surgical** and **Pinpointing Target**, which build stacks while aiming: it fills as the stacks build and turns green once they are all at their maximum (see [Aiming blessings](#aiming-blessings)).
 
 The mod is purely visual. It never releases attacks, changes timings, simulates input or alters buffs.
 
 ## Display
 
-The ring sits around the crosshair. With `Follow crosshair` on (the default) it moves with the crosshair when the game's camera sway shifts it while you charge and move; otherwise it stays at the centre of the screen. With `Show heavy attack threshold` on (the default) it is drawn from the moment you start charging an attack; with it off, only while a charge-dependent effect is building (colors shown are the defaults, see [Colors](#colors)):
+The ring sits around the crosshair. With `Follow crosshair` on (the default) it moves with the crosshair when the game's camera sway shifts it while you charge and move; otherwise it stays at the centre of the screen. With `Show heavy attack threshold` on (the default) it is drawn from the moment you start charging an attack; with it off, only while a charge-dependent effect is building and, for the [auto-release marker](#auto-release-marker), after READY (colors shown are the defaults, see [Colors](#colors)):
 
 | State | Ring |
 | --- | --- |
@@ -17,13 +19,14 @@ The ring sits around the crosshair. With `Follow crosshair` on (the default) it 
 | Charging | Amber segments fill clockwise from the top |
 | Heavy attack available, effects still building | The lit segments turn lime with a brief pulse, and the ring keeps filling |
 | READY - every tracked effect is at its maximum, or, without effects, the attack counts as a heavy attack | Fully green, with a brief pulse |
+| Holding on after READY | Stays green, with one white segment travelling clockwise from the top; it completes one turn when the weapon would release the attack on its own |
 | Released, cancelled, weapon switched, downed | Hidden immediately |
 
-With effects, one ring spans the whole expected charge. With Thrust on a combat axe, for example, a release counts as a heavy attack from 0.35 s and Thrust is capped at 0.90 s, so the ring turns lime a little over a third of the way round and green when it is full. Without effects the ring ends at the heavy attack threshold and turns green there. After READY the ring stays full for as long as you keep charging; holding longer gains nothing, but you can of course keep charging for other reasons.
+With effects, one ring spans the whole expected charge. With Thrust on a combat axe, for example, a release counts as a heavy attack from 0.35 s and Thrust is capped at 0.90 s, so the ring turns lime a little over a third of the way round and green when it is full. Without effects the ring ends at the heavy attack threshold and turns green there. After READY the ring stays full for as long as you keep charging, with the white marker counting down to the weapon's automatic release; holding longer gains nothing for the tracked effects, but fully charged mechanics such as Unstoppable Force need exactly that release.
 
 In `Progress + READY` mode the ring starts filling as soon as you press attack, so a light attack briefly shows a partially filled ring until it is released. With `Show heavy attack threshold` off, the ring only appears once the first stack of an effect has arrived, shortly after the attack has become a heavy attack, so light attacks never make it flicker.
 
-With `Display` set to `READY only` the ring stays hidden while charging, including the lime phase, and only appears at READY.
+With `Display` set to `READY only` the ring stays hidden while charging, including the lime phase, and only appears at READY. The white marker then runs on it as usual.
 
 ## What it tracks
 
@@ -77,7 +80,7 @@ With `Show heavy attack threshold` on (the default), the ring also marks the ear
 * **Without charge-dependent effects** the ring fills up to that moment and turns green. This also covers flat heavy attack bonuses that do not depend on how long you charge, such as heavy attack damage talents, and the heavy bashes and stabs of ranged weapons. Holding longer than READY adds no damage.
 * **With charge-dependent effects** the lit segments turn lime at that moment, with a brief pulse, and the ring keeps filling until every effect is capped and it turns green. Letting go during the lime phase gives a heavy attack without the full bonus.
 
-Turn the setting off to show the ring only while the effects above build, as in earlier versions.
+Turn the setting off to show the ring only while the effects above build, as in earlier versions - except that a charge without effects still shows the [auto-release marker](#auto-release-marker) from the threshold on, unless you turn that off too.
 
 The threshold is read from the game for each charge, never hard-coded. The game decides light or heavy when you let go: once the weapon's heavy attack input has been held for its hold time (0.25 to 0.45 s depending on the weapon), a release is queued as a heavy attack. The charging action then starts the heavy swing at its own `chain_time`, which differs between weapons, marks and combo steps. A queued heavy waits for that moment for up to its buffer time (0.5 s), so:
 
@@ -92,6 +95,27 @@ The threshold runs entirely on your client's own windup timer, as no server stac
 The effects always decide READY. The choice is made when you start charging: if any effect can stack during this charge, READY follows that effect, even while its first stack has not arrived yet - until then the ring waits in lime. Effects whose condition is not met when you start charging do not count, so a Relic Blade heavy attack charged without sprinting, or a Mechanicus Power Sword heavy attack with the special off, shows the heavy attack threshold alone.
 
 With effects, the ring spans the expected charge up to the slowest effect's cap, and the lime phase starts at the threshold's share of it. In `Predicted` mode the ring fills at a steady pace all the way round; in `Server-confirmed` mode the part after the threshold steps as the stacks arrive from the server.
+
+## Auto-release marker
+
+A held heavy attack ends in one of two ways: you let go, or the weapon releases it on its own once you have held it long enough. The game counts an attack as fully charged only in the second case, and some blessings only work then - **Unstoppable Force**, for example, gives fully charged heavy attacks infinite cleave. With `Show auto-release clock marker` on (the default), the ring shows how long that still takes, without giving up READY:
+
+* **READY** - the ring is fully green, as before, with its brief pulse.
+* **Holding on** - all segments stay green except one white segment, which starts at the top and travels clockwise like the hand of a clock. Each segment it leaves turns green again.
+* **Automatic release** - the hand completes its turn as the weapon releases the attack, and the ring disappears with the charge.
+
+With Thrust on a combat axe, for example, READY comes at 0.90 s and the weapon releases the attack on its own at 1.35 s, so the hand takes 0.45 s for its turn.
+
+The time is read from the game for each charge, never hard-coded. After its hold time (see [Heavy attack threshold](#heavy-attack-threshold)) the weapon's heavy attack input waits for you to let go - for 1 s on most weapons and for longer on a few, such as 1.6 s on the Cruncher - and once that window has passed, the game completes the input on its own. The mod reads when the game's input handling started that window, so a hold that began during the previous swing counts too. The hand moves with the game's own fixed-step clock rather than with your frame rate: at short intervals it can skip a segment between steps, but it always arrives on time.
+
+* **Letting go ends it.** The marker disappears the moment you release. The green ring stays until the swing begins, as before, unless it was only shown for the marker.
+* **READY timing.** In `Server-confirmed` mode READY can come about one ping later. The marker then starts there and still ends at the automatic release, so it moves a little faster instead of giving you extra time.
+* **Late READY.** If less than 0.1 s is left at READY, for example with an effect that caps just before the automatic release, there is no marker.
+* **Without charge-dependent effects** the marker starts at READY, the heavy attack threshold. This also works with `Show heavy attack threshold` off: the ring then stays hidden while you charge and only appears at the threshold, green with the marker.
+* **`READY only`** shows the green ring and its marker as usual; only the charging before READY stays hidden.
+* **Melee only.** The aiming ring has no marker.
+
+Turn `Show auto-release clock marker` off to keep the ring fully green after READY, exactly as in earlier versions.
 
 ## READY timing
 
@@ -127,7 +151,7 @@ Values are taken from the game's blessing definitions and kuli's guides; the mod
 * **Both blessings on one weapon** (Phosphor Blast Pistol, Shotpistol & Shield): READY waits for the slower one. With a T4 Surgical and Pinpointing Target on the Phosphor Blast Pistol, Pinpointing Target is full after 2.0 s, but READY comes at 3.25 s.
 * **Only the weapon in your hands counts.** Blessings of a holstered weapon are ignored, as the game ignores them too.
 * **Melee charges come first.** If you start a melee charge while aiming, such as the Shotpistol & Shield's bash from a raised shield, the ring shows that charge until it ends. The push itself ends the aim and removes the stacks, so a new aim starts from empty.
-* **Its own look.** The aiming ring has its own display mode, size, thickness, position, READY pulse and colors in the `Aiming indicator` settings group, so it can differ from the melee ring - for example larger, or in `READY only` mode while the melee ring shows its progress. By default it looks exactly like the melee ring. It has no heavy attack available color, as aiming never shows that state.
+* **Its own look.** The aiming ring has its own display mode, size, thickness, position, READY pulse and colors in the `Aiming indicator` settings group, so it can differ from the melee ring - for example larger, or in `READY only` mode while the melee ring shows its progress. By default it looks exactly like the melee ring. It has no heavy attack available or auto-release marker color, as aiming shows neither.
 
 `READY timing` does not apply to aiming. Unlike the melee effects, these blessings have no stack count that the server sends to your client: the game computes their stacks from how long you have been aiming since you started or last fired, using the same aim timer on your client and on the server. The ring follows that timer directly, so it is on time in both solo and multiplayer, with no network delay to wait for.
 
@@ -155,6 +179,7 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Display | Progress + READY | Progress + READY / READY only |
 | READY timing | Predicted | Predicted / Server-confirmed |
 | Show heavy attack threshold | On | Shows the ring from the start of every charge and marks the heavy attack threshold |
+| Show auto-release clock marker | On | After READY, one segment travels around the green ring until the weapon would release the attack on its own (see [Auto-release marker](#auto-release-marker)) |
 | Follow crosshair | On | Moves the ring with the crosshair as the game's camera sway shifts it while you charge and move; the offsets then count from the crosshair. With the game's `Camera Sway Intensity` at 0 % the crosshair, and so the ring, stays centred. Off keeps the ring at the screen centre |
 | Ring size | 32 | 12-150 px radius at 1080p |
 | Ring thickness | 3 | 1-10 px per segment at 1080p |
@@ -166,6 +191,7 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Heavy attack available color | RGB `233, 255, 90`, alpha `229` (lime) | Any color and opacity, shown while the effects build after the heavy attack threshold |
 | READY color | RGB `120, 225, 140`, alpha `255` (green) | Any color and opacity |
 | READY pulse color | RGB `120, 225, 140`, alpha `255` (same as READY) | Any color and opacity, shown only during the READY pulse |
+| Auto-release marker color | RGB `255, 255, 255`, alpha `255` (white) | Any color and opacity, used for the one segment of the auto-release marker |
 
 `Aiming indicator` group, for the ring shown while aiming down sights (see [Aiming blessings](#aiming-blessings)):
 
@@ -194,6 +220,8 @@ Each ring state has its own color picker with an alpha channel, so color and opa
 
 `READY pulse color` is used only while the existing READY pulse runs, the 0.25-second enlargement of the segments when READY is first reached; the ring then switches to `READY color` for as long as you keep charging. With `READY pulse` off, the ring turns to `READY color` immediately and the pulse color is never shown. Because the pulse color defaults to the READY color, the pulse only changes the segment size unless you pick a different color. The pulse at the start of the lime phase keeps `Heavy attack available color`.
 
+`Auto-release marker color` paints the single segment of the [auto-release marker](#auto-release-marker) that travels around the READY ring, also while the READY pulse runs. With `Show auto-release clock marker` off it is never shown.
+
 Color changes apply immediately, without reloading. Resetting a color setting restores the default listed above.
 
 **Updating from 1.0.0:** the separate `Opacity` setting has been replaced by the alpha of the colors. On the first start after the update, your old `Opacity` value is applied once to the alpha of every color - at 50 %, for example, the defaults become 40, 117, 114, 127 and 127 - so the ring looks exactly as before. After that the old setting is removed, and you adjust each color's alpha directly.
@@ -221,6 +249,18 @@ With `Show heavy attack threshold` off, the `heavy threshold` and `heavy attack 
 
 `held` is how much of the heavy attack input's hold was already done when the charge started - above 0 in attack chains where you pressed during the previous swing. It shows `released` when you had already let go before the charge started, typically a quick tap during the previous swing that turns into a light attack right away, and `?` when the game's input handling could not be read; in both cases the hold is counted from the start of the charge. If no heavy attack threshold can be resolved for a windup, it logs `no charge-dependent effect, no heavy attack threshold`. An effect left out because its condition is not met logs `<child buff> skipped: its condition is not met in this windup` before the windup line. In the first example above, the predicted READY lands before the third stack has arrived from the server - that gap is the network delay Predicted mode removes.
 
+With `Show auto-release clock marker` on, a charge also logs when the game is expected to release it on its own, counted from the start of the charge, and what the game actually did:
+
+```text
+[Perfect Thrust] heavy_attack auto-completes at 1.35s (window 1.00s)
+[Perfect Thrust] READY after 0.90s (3 triggers, predicted): <child buff> 2/3
+[Perfect Thrust] auto-release marker from 0.90s to 1.37s (0.46s)
+[Perfect Thrust] end (new_interrupting_action) after 1.37s, 4 triggers, ready=true: <child buff> 3/3
+[Perfect Thrust] input auto-completed=true at 1.38s, predicted 1.37s (+0.02s), next sweep
+```
+
+The first line is predicted at the start of the charge from the hold time. From READY on, the marker uses the moment the hold actually ended, which the game rounds up to its next fixed step of about 0.02 s, here 1.37 s instead of 1.35 s. `input auto-completed` is the flag the game hands to the following action, `next`; a swing with `true` counts as fully charged, and a release before the automatic one shows `false` with a negative offset. The game completes the input on the first fixed step after the window, so `true` is expected within a fixed step or two (about 0.02 to 0.04 s) of the prediction. A charge whose heavy attack input does not complete on its own, or was already released when the charge started, logs `auto-complete not predicted for <input>` instead. At READY the marker logs `skipped` with the time left when less than 0.1 s remains, and `auto-release marker ended after ...` when you let go before the automatic release. Shield heavy attacks charged from a block write no `input auto-completed` line, as the mod does not hook their end.
+
 Aiming with `Show aiming blessings` on writes `ADS` lines. The times count from the start of the aim or the last shot, whichever is later; `10 x 0.2s` is the step count and interval of your blessing's tier:
 
 ```text
@@ -238,9 +278,9 @@ An aim with a weapon that has no aiming blessing logs a single `ADS slot_seconda
 * **Conditions are checked once, when you start charging.** If a conditional effect loses its condition before its first stack - for example you stop sprinting right after starting a Relic Blade sprint heavy - READY does not come for that charge: the ring waits in lime (or stays hidden with `Show heavy attack threshold` off) instead of turning green at the heavy attack threshold.
 * **Very high ping.** Effects are counted once their first stack has arrived. Above roughly 250-500 ms, a second effect's first stack may not have arrived yet when another effect is capped, which can make a predicted READY early.
 * **With `Show heavy attack threshold` off, the ring of a charge with effects appears about one ping after the heavy threshold**, in both modes, because an effect is only shown once its first stack has arrived from the server. Its fill is already correct when it appears.
-* **The hold timer comes from game internals.** The mod reads the heavy attack input's hold timer from the game's input handling. If a game update changes it, the mod counts the hold from the start of the charge instead, which is never early but can make the threshold late in attack chains; debug output then shows `held ?`. Conditions the game checks for a few heavy attacks themselves, such as the weapon special still being active or not aiming with the shield shotpistol, are not evaluated.
+* **The hold timer comes from game internals.** The mod reads the heavy attack input's hold timer from the game's input handling. If a game update changes it, the mod counts the hold from the start of the charge instead, which is never early but can make the threshold late in attack chains; debug output then shows `held ?`. The auto-release marker reads the same input handling; if it cannot, there is simply no marker. Conditions the game checks for a few heavy attacks themselves, such as the weapon special still being active or not aiming with the shield shotpistol, are not evaluated.
 * **The rings follow the crosshair, not the weapon model.** With `Follow crosshair` on, each ring follows the game's crosshair - your aim point, which camera sway, weapon sway and recoil move on screen - not the bobbing and kick animations of the weapon model, so the sights can drift slightly around the aiming ring.
-* **"Fully charged" effects are not tracked.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks. READY does not mean the attack counts as fully charged for them.
+* **"Fully charged" effects are shown by the marker, not by READY.** Effects that need an attack held until the weapon releases it on its own, such as the Unstoppable Force blessing, do not build stacks, so READY does not mean the attack counts as fully charged for them. The [auto-release marker](#auto-release-marker) shows when that release comes.
 * **Only effects that stack from the windup trigger are detected.** An effect that builds while charging in some other way, or has no child buff with a stack limit, is not recognised. At most four effects are tracked per charge.
 * **Ranged charging is not covered.** Plasma guns, force staves and other charged ranged weapons use a separate charge mechanic that the game's own crosshair already displays. Of the ranged blessings, only Surgical and Pinpointing Target, which build stacks over aim time, are tracked.
 * **The Grenadier Gauntlet keeps its stacks briefly after a shot.** Its Pinpointing Target holds the stacks from before the shot for 0.8 s, so the grenade in flight keeps them, and then continues as if it had restarted at the shot. The ring restarts at the shot, which is when the stacks for the next shot start building; READY comes at the same moment as the game's maximum.

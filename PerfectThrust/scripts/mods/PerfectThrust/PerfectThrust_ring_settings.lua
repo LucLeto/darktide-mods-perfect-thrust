@@ -1,8 +1,8 @@
 --- Shared definitions of Perfect Thrust's ring settings; one set for each ring.
 -- The melee charge ring and the aiming ring each have their own display mode, crosshair following,
 -- size, thickness, offsets, READY pulse and colours. The melee ring's settings use the plain setting ids, the
--- aiming ring's the same ids with `ADS_PREFIX`; the aiming ring has no heavy attack available or
--- auto-release marker colour, as it never shows either. This module is the single source of their DMF widget
+-- aiming ring's the same ids with `ADS_PREFIX`; the aiming ring has no heavy attack available
+-- colour and no auto-release marker colour or size, as it never shows either. This module is the single source of their DMF widget
 -- definitions and defaults: `PerfectThrust_data.lua` builds both settings groups from it,
 -- `PerfectThrust.lua` the settings cache, and the HUD element looks up the setting ids of the ring
 -- it shows. The aiming ring reuses the melee ring's titles and tooltips, except for the few texts
@@ -36,7 +36,8 @@ local APPEARANCE_IDS = {
     "heavy_available_color",
     "ready_color",
     "ready_pulse_color",
-    "auto_release_marker_color"
+    "auto_release_marker_color",
+    "auto_release_marker_size"
 }
 
 RingSettings.APPEARANCE_IDS = APPEARANCE_IDS
@@ -51,7 +52,8 @@ end
 --- Ring settings only the melee ring has.
 local WINDUP_ONLY = {
     heavy_available_color = true,
-    auto_release_marker_color = true
+    auto_release_marker_color = true,
+    auto_release_marker_size = true
 }
 
 --- Localization ids the aiming ring has its own `ads_` text for; its other titles and tooltips
@@ -142,6 +144,14 @@ local DEFINITIONS = {
         -- White.
         default_value = { 255, 255, 255, 255 },
         has_alpha = true
+    },
+    auto_release_marker_size = {
+        type = "numeric",
+        -- Times the ring thickness.
+        default_value = 2,
+        range = { 1, 4 },
+        decimals_number = 1,
+        step_size_value = 0.1
     }
 }
 

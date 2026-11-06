@@ -5,9 +5,10 @@
 -- counts as a heavy attack while charge-dependent effects still build, the whole ring switches to
 -- the READY colour at READY, each switch with an optional short pulse, and it hides as soon as the
 -- tracker stops. After READY, while the tracker reports the auto-release marker, one segment of the
--- READY ring is drawn in the marker colour and at twice the size instead, moving clockwise from
--- the top as the marker's progress advances towards the automatic release, and each segment it
--- leaves gets its READY colour and size back. Without a tracked windup and with the `show_ads_blessings` setting on, it asks the
+-- READY ring is drawn in the marker colour and at the marker size, twice the others by default,
+-- moving clockwise from the top as the marker's progress advances towards the automatic release,
+-- and each segment it leaves gets its READY colour and size back. Without a tracked windup and
+-- with the `show_ads_blessings` setting on, it asks the
 -- aim tracker instead, which fills the same ring while aiming blessings build and reports READY
 -- once they are at their maximum. Each of the two rings has its own display mode, crosshair
 -- following, size, position, READY pulse and colours (amber charging, lime heavy attack available,
@@ -67,10 +68,6 @@ local DEG_TO_RAD = math_pi / 180
 -- The segment size follows a half sine from 1 to `1 + PULSE_EXTRA_SCALE` and back.
 local PULSE_DURATION = 0.25
 local PULSE_EXTRA_SCALE = 0.6
-
---- Size of the auto-release marker's segment relative to the other segments, so the one moving
--- segment stands out against the full READY ring.
-local MARKER_SIZE_SCALE = 2
 
 --- Layers of the segments within the ring widget. The marker's larger square overlaps its
 -- neighbours, so it is drawn one layer above them.
@@ -276,6 +273,7 @@ HudElementPerfectThrust.init = function (self, parent, draw_layer, start_scale)
 
     self._radius = 32
     self._thickness = 3
+    self._marker_size_scale = 2
     self._thickness_scale = 1
     self._sized_marker = 0
     self._shown = false
@@ -542,7 +540,7 @@ end
 
 --- Positions and sizes every segment on the ring.
 -- Each segment is a square of the thickness setting, centred on the ring's radius; the
--- auto-release marker's segment is `MARKER_SIZE_SCALE` times as large, on its own layer.
+-- auto-release marker's segment is `auto_release_marker_size` times as large, on its own layer.
 -- number: thickness_scale multiplier of the segment size, above 1 during the READY pulse
 HudElementPerfectThrust._apply_geometry = function (self, thickness_scale)
     local radius = self._radius
@@ -567,7 +565,7 @@ HudElementPerfectThrust._apply_geometry = function (self, thickness_scale)
     local marker = self._sized_marker
 
     if marker > 0 then
-        _size_segment(style, marker, radius, segment_size * MARKER_SIZE_SCALE, MARKER_LAYER)
+        _size_segment(style, marker, radius, segment_size * self._marker_size_scale, MARKER_LAYER)
     end
 
     widget.dirty = true
@@ -590,7 +588,7 @@ HudElementPerfectThrust._resize_marker = function (self, marker)
     end
 
     if marker > 0 then
-        _size_segment(style, marker, radius, segment_size * MARKER_SIZE_SCALE, MARKER_LAYER)
+        _size_segment(style, marker, radius, segment_size * self._marker_size_scale, MARKER_LAYER)
     end
 end
 
@@ -619,7 +617,7 @@ HudElementPerfectThrust._hide = function (self)
     widget.dirty = true
 end
 
---- Applies one ring's position, radius, thickness and colour settings.
+--- Applies one ring's position, radius, thickness, auto-release marker size and colour settings.
 -- Records the settings version and the ring it applied, so `update` only calls it again after a
 -- change or when the other ring is shown.
 -- tab: settings `mod._settings`
@@ -632,6 +630,7 @@ HudElementPerfectThrust._apply_display_settings = function (self, settings, keys
 
     self._radius = settings[keys.ring_radius] or RingSettings.default_value("ring_radius")
     self._thickness = settings[keys.ring_thickness] or RingSettings.default_value("ring_thickness")
+    self._marker_size_scale = settings[keys.auto_release_marker_size] or RingSettings.default_value("auto_release_marker_size")
     self._pulse_remaining = 0
 
     _copy_setting_color(self._dim_color, settings[keys.unfilled_color], SEG_DIM_COLOR)

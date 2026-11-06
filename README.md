@@ -19,7 +19,7 @@ The ring sits around the crosshair. With `Follow crosshair` on (the default) it 
 | Charging | Amber segments fill clockwise from the top |
 | Heavy attack available, effects still building | The lit segments turn lime with a brief pulse, and the ring keeps filling |
 | READY - every tracked effect is at its maximum, or, without effects, the attack counts as a heavy attack | Fully green, with a brief pulse |
-| Holding on after READY | Stays green, with one white segment, twice the size of the others, travelling clockwise from the top; it completes one turn when the weapon would release the attack on its own |
+| Holding on after READY | Stays green, with one larger white segment travelling clockwise from the top; it completes one turn when the weapon would release the attack on its own |
 | Released, cancelled, weapon switched, downed | Hidden immediately |
 
 With effects, one ring spans the whole expected charge. With Thrust on a combat axe, for example, a release counts as a heavy attack from 0.35 s and Thrust is capped at 0.90 s, so the ring turns lime a little over a third of the way round and green when it is full. Without effects the ring ends at the heavy attack threshold and turns green there. After READY the ring stays full for as long as you keep charging, with the white marker counting down to the weapon's automatic release; holding longer gains nothing for the tracked effects, but fully charged mechanics such as Unstoppable Force need exactly that release.
@@ -101,7 +101,7 @@ With effects, the ring spans the expected charge up to the slowest effect's cap,
 A held heavy attack ends in one of two ways: you let go, or the weapon releases it on its own once you have held it long enough. The game counts an attack as fully charged only in the second case, and some blessings only work then - **Unstoppable Force**, for example, gives fully charged heavy attacks infinite cleave. With `Show auto-release clock marker` on (the default), the ring shows how long that still takes, without giving up READY:
 
 * **READY** - the ring is fully green, as before, with its brief pulse.
-* **Holding on** - all segments stay green except one white segment, drawn at twice the size of the others so it stands out in a fight, which starts at the top and travels clockwise like the hand of a clock. Each segment it leaves turns green and small again.
+* **Holding on** - all segments stay green except one white segment, drawn larger than the others so it stands out in a fight (twice their size by default, see `Auto-release marker size`), which starts at the top and travels clockwise like the hand of a clock. Each segment it leaves turns green and small again.
 * **Automatic release** - the hand completes its turn as the weapon releases the attack, and the ring disappears with the charge.
 
 With Thrust on a combat axe, for example, READY comes at 0.90 s and the weapon releases the attack on its own at 1.35 s, so the hand takes 0.45 s for its turn.
@@ -191,7 +191,8 @@ Every weapon's blessing is a clone of one of two base buff templates in `base_we
 | Heavy attack available color | RGB `233, 255, 90`, alpha `229` (lime) | Any color and opacity, shown while the effects build after the heavy attack threshold |
 | READY color | RGB `120, 225, 140`, alpha `255` (green) | Any color and opacity |
 | READY pulse color | RGB `120, 225, 140`, alpha `255` (same as READY) | Any color and opacity, shown only during the READY pulse |
-| Auto-release marker color | RGB `255, 255, 255`, alpha `255` (white) | Any color and opacity, used for the one double-size segment of the auto-release marker |
+| Auto-release marker color | RGB `255, 255, 255`, alpha `255` (white) | Any color and opacity, used for the one segment of the auto-release marker |
+| Auto-release marker size | 2.0 | 1.0-4.0 times the ring thickness; 1 draws the marker as large as the other segments |
 
 `Aiming indicator` group, for the ring shown while aiming down sights (see [Aiming blessings](#aiming-blessings)):
 
@@ -220,7 +221,7 @@ Each ring state has its own color picker with an alpha channel, so color and opa
 
 `READY pulse color` is used only while the existing READY pulse runs, the 0.25-second enlargement of the segments when READY is first reached; the ring then switches to `READY color` for as long as you keep charging. With `READY pulse` off, the ring turns to `READY color` immediately and the pulse color is never shown. Because the pulse color defaults to the READY color, the pulse only changes the segment size unless you pick a different color. The pulse at the start of the lime phase keeps `Heavy attack available color`.
 
-`Auto-release marker color` paints the single segment of the [auto-release marker](#auto-release-marker) that travels around the READY ring, also while the READY pulse runs. That segment is drawn at twice the size of the others, so `Ring thickness` sets its size too. With `Show auto-release clock marker` off it is never shown.
+`Auto-release marker color` paints the single segment of the [auto-release marker](#auto-release-marker) that travels around the READY ring, also while the READY pulse runs. Its size is `Auto-release marker size` times `Ring thickness`, twice the other segments by default. With `Show auto-release clock marker` off it is never shown.
 
 Color changes apply immediately, without reloading. Resetting a color setting restores the default listed above.
 
